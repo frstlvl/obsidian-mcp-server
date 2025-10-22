@@ -123,8 +123,6 @@ The default model (`Xenova/all-MiniLM-L6-v2`) works well for most users. Conside
 
 See [Semantic Search Guide](docs/semantic-search.md#hardware-specific-recommendations) for detailed model comparison.
 
-> > **Note:** This still keeps the repo history on GitHub until you force-push.
-
 ### Claude Desktop Integration
 
 #### Windows
