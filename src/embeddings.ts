@@ -16,6 +16,24 @@ import { logInfo, logError, logWarn, logDebug } from "./logger.js";
 import * as path from "path";
 import * as fs from "fs/promises";
 
+const EMBEDDING_TIMEOUT_MS = 30000; // 30 second timeout for embedding generation
+
+/**
+ * Wraps a promise with a timeout
+ */
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  errorMessage: string
+): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
+    ),
+  ]);
+}
+
 export interface EmbeddingConfig {
   provider: "anthropic" | "transformers";
   anthropicApiKey?: string;
@@ -204,14 +222,21 @@ export class VectorStore {
 
         let embedding;
         try {
-          embedding = await this.generateEmbedding(embeddingText);
+          // Wrap embedding generation with timeout
+          embedding = await withTimeout(
+            this.generateEmbedding(embeddingText),
+            EMBEDDING_TIMEOUT_MS,
+            `Embedding generation timed out after ${EMBEDDING_TIMEOUT_MS}ms`
+          );
           logDebug(`Successfully generated embedding for: ${relativePath}`);
         } catch (embError) {
           logError(
             `Embedding generation failed for ${relativePath}:`,
             embError
           );
-          throw embError; // Re-throw to be caught by outer try-catch
+          logWarn(`Skipping note due to embedding failure: ${relativePath}`);
+          stats.failed++;
+          continue; // Skip this note and continue with the next one
         }
 
         logDebug(`Inserting into index: ${relativePath}`);
@@ -241,7 +266,9 @@ export class VectorStore {
         stats.indexed++;
 
         if (stats.indexed % 10 === 0) {
-          logInfo(`Indexed ${stats.indexed}/${notes.length} notes`);
+          logInfo(
+            `Indexed ${stats.indexed}/${notes.length} notes (${stats.failed} failed, ${stats.skipped} skipped)`
+          );
         }
 
         // Periodically save progress and trigger garbage collection
@@ -256,6 +283,7 @@ export class VectorStore {
         }
       } catch (error) {
         logError(`Failed to index ${note.relativePath}:`, error);
+        logWarn(`Skipping note due to unexpected error: ${note.relativePath}`);
         stats.failed++;
         // Continue processing other notes
       }
@@ -272,7 +300,16 @@ export class VectorStore {
 
     await this.saveIndexMetadata(existingIndex);
 
-    logInfo(`Indexing complete:`, stats);
+    logInfo(
+      `Indexing completed: indexed=${stats.indexed}, skipped=${stats.skipped}, failed=${stats.failed}`
+    );
+
+    if (stats.failed > 0) {
+      logWarn(
+        `⚠️  ${stats.failed} notes failed to index. Check logs for details on which notes were skipped.`
+      );
+    }
+
     return stats;
   }
 
