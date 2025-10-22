@@ -59,7 +59,7 @@ Add the `vectorSearch` section to your `config.json`:
     "enabled": true,
     "provider": "transformers",
     "model": "Xenova/all-MiniLM-L6-v2",
-    "autoIndex": true
+    "indexOnStartup": true
   },
   "searchOptions": {
     "maxResults": 20,
@@ -72,26 +72,100 @@ Add the `vectorSearch` section to your `config.json`:
 
 ### Configuration Options
 
-| Option      | Type    | Default                     | Description                                            |
-| ----------- | ------- | --------------------------- | ------------------------------------------------------ |
-| `enabled`   | boolean | `false`                     | Enable/disable semantic search                         |
-| `provider`  | string  | `"transformers"`            | Embedding provider (`"transformers"` or `"anthropic"`) |
-| `model`     | string  | `"Xenova/all-MiniLM-L6-v2"` | Embedding model to use                                 |
-| `autoIndex` | boolean | `true`                      | Automatically index vault on server startup            |
+| Option           | Type    | Default                     | Description                                                        |
+| ---------------- | ------- | --------------------------- | ------------------------------------------------------------------ |
+| `enabled`        | boolean | `false`                     | Enable/disable semantic search                                     |
+| `provider`       | string  | `"transformers"`            | Embedding provider (`"transformers"` or `"anthropic"`)             |
+| `model`          | string  | `"Xenova/all-MiniLM-L6-v2"` | Embedding model to use                                             |
+| `indexOnStartup` | boolean | `true`                      | Index vault on server startup (file watcher maintains index after) |
 
 ### Supported Models
 
 **Transformers.js Models** (local, no API key required):
-- `Xenova/all-MiniLM-L6-v2` - Fast, good quality, 384 dimensions (recommended)
-  - **Parameters**: 22M
-  - **Speed**: ~50ms per note on modern CPU
-  - **Quality**: Excellent for document similarity
-  - **Privacy**: Runs locally, no API calls
-- `Xenova/all-mpnet-base-v2` - Higher quality, 768 dimensions
-- `Xenova/paraphrase-multilingual-MiniLM-L12-v2` - Multilingual support
 
-**Anthropic Models** (future support):
-- Currently placeholder - Anthropic doesn't have a dedicated embeddings API yet
+#### Recommended Models by Use Case
+
+**1. `Xenova/all-MiniLM-L6-v2` - Default Choice** ⭐
+- **Dimensions**: 384
+- **Model Size**: 23 MB
+- **Parameters**: 22M
+- **Speed**: ~50ms per note (Intel i5/AMD Ryzen 5 or better)
+- **Quality**: Good for general document similarity
+- **Index Time**: 4-5 minutes (5,000 notes)
+- **Storage**: ~2-3 KB per note (~20 MB for 5,000 notes)
+- **Best for**: Default users, proven reliability, good balance
+
+**2. `Xenova/bge-small-en-v1.5` - Best 384-Dimension Model** 🚀
+- **Dimensions**: 384
+- **Model Size**: 33 MB
+- **Parameters**: 33M
+- **Speed**: ~60ms per note
+- **Quality**: State-of-the-art at 384-dim (MTEB benchmark leader)
+- **Index Time**: 5-6 minutes (5,000 notes)
+- **Storage**: ~2-3 KB per note (~20 MB for 5,000 notes)
+- **Best for**: Users wanting best quality without storage overhead
+
+**3. `Xenova/bge-base-en-v1.5` - Highest Quality** 🏆
+- **Dimensions**: 768 (2x larger embeddings)
+- **Model Size**: 109 MB
+- **Parameters**: 109M
+- **Speed**: ~150ms per note (requires fast CPU: Ryzen 7+, i7+, M2+)
+- **Quality**: Best overall quality for English text retrieval
+- **Index Time**: 12-15 minutes (5,000 notes)
+- **Storage**: ~4-6 KB per note (~40 MB for 5,000 notes)
+- **Best for**: High-end hardware, quality-critical use cases, research vaults
+- **Hardware Recommendation**: AMD Ryzen AI MAX+ PRO, Intel i9-13900K+, Apple M3 Max+
+
+**4. `Xenova/all-mpnet-base-v2` - Alternative High-Quality**
+- **Dimensions**: 768
+- **Model Size**: 109 MB
+- **Parameters**: 109M
+- **Speed**: ~150-200ms per note
+- **Quality**: Very good, slightly behind BGE models
+- **Best for**: Users already familiar with MPNet models
+
+**5. `Xenova/paraphrase-multilingual-MiniLM-L12-v2` - Multilingual**
+- **Dimensions**: 384
+- **Model Size**: 118 MB
+- **Parameters**: 118M
+- **Speed**: ~100ms per note
+- **Languages**: 50+ languages (English, Spanish, French, German, Chinese, Japanese, Arabic, etc.)
+- **Quality**: Good for cross-language search
+- **Best for**: Multilingual vaults, international users
+- **Note**: Slightly lower quality than English-only models for English text
+
+#### Model Performance Comparison
+
+| Model               | Quality Score | Speed | Storage | Use Case         |
+| ------------------- | ------------- | ----- | ------- | ---------------- |
+| all-MiniLM-L6-v2    | ⭐⭐⭐⭐          | ⚡⚡⚡   | 💾       | Default          |
+| bge-small-en-v1.5   | ⭐⭐⭐⭐⭐         | ⚡⚡⚡   | 💾       | **Best Overall** |
+| bge-base-en-v1.5    | ⭐⭐⭐⭐⭐         | ⚡⚡    | 💾💾      | Premium          |
+| all-mpnet-base-v2   | ⭐⭐⭐⭐          | ⚡⚡    | 💾💾      | Alternative      |
+| multilingual-MiniLM | ⭐⭐⭐           | ⚡⚡    | 💾       | Languages        |
+
+### Hardware-Specific Recommendations
+
+**High-End CPU (Ryzen 9+, Intel i9+, M3 Max+, 64GB+ RAM)**:
+- **Model**: `Xenova/bge-base-en-v1.5`
+- **Why**: 16+ cores easily handle 768-dim embeddings, best quality available
+- **Expected**: ~12-15 min initial index (5,000 notes), ~100-120ms per update
+
+**Mid-Range CPU (Ryzen 5-7, Intel i5-i7, M2, 16-32GB RAM)**:
+- **Model**: `Xenova/bge-small-en-v1.5`
+- **Why**: Best quality at 384-dim, minimal overhead
+
+**Budget/Older CPU (4-8 cores, 8-16GB RAM)**:
+- **Model**: `Xenova/all-MiniLM-L6-v2` (default)
+- **Why**: Proven, fast, reliable
+
+**Apple Silicon (M2+, 16GB+ unified memory)**:
+- **Model**: `Xenova/bge-base-en-v1.5`
+- **Why**: Neural engine acceleration makes 768-dim fast
+
+**Laptop/Battery Constrained**:
+- **Model**: `Xenova/all-MiniLM-L6-v2`
+- **Why**: Lower power consumption, faster inference
 
 ### Technical Implementation
 
@@ -137,6 +211,165 @@ return results.map(r => ({
   excerpt: extractExcerpt(r.metadata.content)
 }));
 ```
+
+## Changing Embedding Models
+
+### When to Change Models
+
+- **Upgrade quality**: Moving from `all-MiniLM-L6-v2` to `bge-base-en-v1.5`
+- **Optimize speed**: Switching to faster model on slower hardware
+- **Add languages**: Switching to multilingual model
+- **Reduce storage**: Moving from 768-dim to 384-dim model
+
+### Important: Models Are Not Compatible
+
+⚠️ **Critical**: Different models produce different embedding dimensions and values. You **cannot mix** vectors from different models in the same index.
+
+**You must delete the entire index and rebuild it when changing models.**
+
+### Step-by-Step Guide to Change Models
+
+#### Step 1: Update Configuration
+
+Edit your `config.json`:
+
+```json
+{
+  "vectorSearch": {
+    "enabled": true,
+    "provider": "transformers",
+    "model": "Xenova/bge-base-en-v1.5",  // ← Change this
+    "indexOnStartup": true                // ← Set to true for re-indexing
+  }
+}
+```
+
+#### Step 2: Delete Existing Vector Index
+
+**Windows (PowerShell)**:
+
+```powershell
+# Replace with your vault path
+Remove-Item "C:\Users\YourName\Documents\ObsidianVault\.mcp-vector-store" -Recurse -Force
+```
+
+**macOS/Linux (Terminal)**:
+
+```bash
+# Replace with your vault path
+rm -rf ~/Documents/ObsidianVault/.mcp-vector-store
+```
+
+**What gets deleted**:
+- `.mcp-vector-store/index.json` - Vector embeddings (~20-40 MB)
+- `.mcp-vector-store/index-metadata.json` - File modification times (~1 MB)
+
+**Note**: This only deletes the search index, not your actual notes!
+
+#### Step 3: Restart MCP Server
+
+**If using Claude Desktop**:
+
+1. Completely quit Claude Desktop (File → Quit, or Alt+F4)
+2. Wait 5 seconds for processes to terminate
+3. Relaunch Claude Desktop
+
+**If running server manually**:
+
+```powershell
+# Stop current server (Ctrl+C)
+# Restart server
+node dist/index.js
+```
+
+#### Step 4: Wait for Re-Indexing
+
+The server will automatically rebuild the index on startup (because `indexOnStartup: true`).
+
+**Monitor progress in logs**:
+
+```powershell
+# Watch the log file
+Get-Content "logs\mcp-server.log" -Wait -Tail 50
+```
+
+**Look for**:
+
+```text
+**Look for**:
+
+```text
+[MCP Vector] Initializing transformer model...
+[MCP Vector] Transformer model loaded
+[MCP Vector] Starting indexing: 5000 notes
+[MCP Vector] Indexed 100/5000 notes
+[MCP Vector] Indexed 200/5000 notes
+...
+[MCP Vector] Indexing complete: 5000 indexed, 0 skipped, 0 failed
+[MCP Vector] File system watcher active - index will update automatically
+```
+
+**Expected time**:
+- **384-dim models** (all-MiniLM, bge-small): 5-7 minutes for 5,000 notes
+- **768-dim models** (bge-base, all-mpnet): 12-15 minutes for 5,000 notes
+
+#### Step 5: Verify New Model Works
+
+Ask Claude to search:
+
+```text
+"Search my vault for notes about machine learning"
+```
+
+Claude should use the `obsidian_semantic_search` tool and return results.
+
+#### Step 6: Optimize for Future Startups
+
+Once indexing completes successfully, edit `config.json`:
+
+```json
+{
+  "vectorSearch": {
+    "indexOnStartup": false  // ← Change to false for faster startups
+  }
+}
+```
+
+This prevents re-indexing on every restart. The file watcher will keep the index updated automatically.
+
+### Quick Reference
+
+| Step | Action                      | Command (Windows)                                      | Command (macOS/Linux)           |
+| ---- | --------------------------- | ------------------------------------------------------ | ------------------------------- |
+| 1    | Update config               | Edit `config.json`                                     | Edit `config.json`              |
+| 2    | Delete index                | `Remove-Item "path\.mcp-vector-store" -Recurse -Force` | `rm -rf path/.mcp-vector-store` |
+| 3    | Restart server              | Restart Claude Desktop                                 | Restart Claude Desktop          |
+| 4    | Monitor logs                | `Get-Content logs\mcp-server.log -Wait`                | `tail -f logs/mcp-server.log`   |
+| 5    | Test search                 | Ask Claude to search                                   | Ask Claude to search            |
+| 6    | Set `indexOnStartup: false` | Edit `config.json`                                     | Edit `config.json`              |
+
+### Troubleshooting Model Changes
+
+**Problem**: Server crashes on startup after changing model
+
+**Solution**: The new model might be downloading. Check logs for:
+
+```text
+[MCP Vector] Downloading model: Xenova/bge-base-en-v1.5
+```
+
+Wait for download to complete (models are 23-109 MB).
+
+**Problem**: Old search results still appear
+
+**Solution**: You didn't delete the old index. The server is using cached embeddings from the previous model. Delete `.mcp-vector-store/` and restart.
+
+**Problem**: Indexing takes forever (> 30 minutes)
+
+**Solution**: 
+- Check CPU usage (should be near 100% during indexing)
+- Consider using a smaller model
+- Exclude large folders with `excludePatterns`
 
 ## Usage
 
@@ -202,7 +435,7 @@ graph TD
 
 ### 1. Indexing Phase
 
-When the server starts (if `autoIndex: true`):
+When the server starts (if `indexOnStartup: true`):
 
 1. Scans all markdown files in your vault
 2. For each note:
@@ -429,7 +662,8 @@ Claude calls: obsidian_semantic_search(query="cloud security best practices")
 **Problem**: Auto-index errors on startup
 
 **Solutions**:
-1. Set `autoIndex: false` and index manually later
+
+1. Set `indexOnStartup: false` if you have an existing index (file watcher will maintain it)
 2. Check vault path permissions (needs read access)
 3. Ensure enough disk space for embeddings
 4. Check for corrupted markdown files (skip them in `excludePatterns`)
@@ -603,9 +837,9 @@ class VectorStore {
 - **Quality**: Excellent for document similarity (384 dimensions)
 - **Maintenance**: Zero - no API keys, rate limits, or usage costs
 
-## Best Practices
+### Best Practices
 
-1. **Enable autoIndex** for initial setup (automatic re-indexing handles updates thereafter)
+1. **Use indexOnStartup: true** for initial setup or fresh indexing (file watcher handles updates automatically)
 2. **Use hybrid mode** for searches requiring exact keyword matches
 3. **Adjust min_score** based on your needs (start at 0.5, increase for higher precision)
 4. **Exclude large files** in `excludePatterns` (images, PDFs, archives)

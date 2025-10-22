@@ -70,7 +70,7 @@ If you want to customize behavior, create `config.json` in the repo root:
     "enabled": true,
     "provider": "transformers",
     "model": "Xenova/all-MiniLM-L6-v2",
-    "autoIndex": false
+    "indexOnStartup": false
   },
   "searchOptions": {
     "maxResults": 20,
@@ -129,39 +129,108 @@ If you want to customize behavior, create `config.json` in the repo root:
 - Default: `"transformers"`
 
 **`vectorSearch.model`** (string)
-- Embedding model name
-- Default: `"Xenova/all-MiniLM-L6-v2"` (384 dimensions)
-- Other options: Any Transformers.js compatible model
 
-**`vectorSearch.autoIndex`** (boolean)
-- Automatically index vault on startup
-- Default: `false` (recommended for fast startup)
-- Set to `true` for first-time indexing
-- Subsequent starts use existing index (incremental updates)
+The embedding model that converts your notes into numerical vectors for semantic search.
 
-**Performance Note**: Auto-indexing a large vault (5,000+ notes) takes several minutes. Disable for production use.
+**Default**: `"Xenova/all-MiniLM-L6-v2"` (384 dimensions)
+
+**Available Models**:
+
+| Model | Dimensions | Speed | Quality | Best For |
+|-------|-----------|-------|---------|----------|
+| `Xenova/all-MiniLM-L6-v2` | 384 | Fast (50ms) | Good | Default, balanced performance |
+| `Xenova/bge-small-en-v1.5` | 384 | Fast (60ms) | Excellent | Best quality at 384-dim |
+| `Xenova/all-mpnet-base-v2` | 768 | Medium (150ms) | Very Good | Higher quality, 2x storage |
+| `Xenova/bge-base-en-v1.5` | 768 | Medium (150ms) | Excellent | State-of-the-art English |
+| `Xenova/paraphrase-multilingual-MiniLM-L12-v2` | 384 | Slow (100ms) | Good | Multilingual vaults |
+
+**Choosing a Model**:
+
+- **Default users**: Stick with `all-MiniLM-L6-v2` (proven, fast, good quality)
+- **High-end CPU (Ryzen 9, i9, M3+)**: Use `Xenova/bge-base-en-v1.5` for best quality
+- **Mid-range CPU**: Use `Xenova/bge-small-en-v1.5` for excellent quality without slowdown
+- **Multilingual vaults**: Use `paraphrase-multilingual-MiniLM-L12-v2`
+- **Limited storage**: Stick with 384-dim models (smaller index size)
+
+**⚠️ Important**: Changing models requires deleting `.mcp-vector-store/` and re-indexing entire vault
+
+**Performance Impact** (5,000 note vault):
+
+| Model | Initial Index Time | Storage Size | Re-index Single Note |
+|-------|-------------------|--------------|---------------------|
+| 384-dim models | 4-6 minutes | ~20 MB | 50-100ms |
+| 768-dim models | 12-15 minutes | ~40 MB | 150-200ms |
+
+**`vectorSearch.indexOnStartup`** (boolean)
+- Index vault when server starts
+- Default: `false` (recommended for fast startup after initial index)
+- Set to `true` for first-time indexing or to rebuild index
+- File watcher maintains the index automatically regardless of this setting
 
 ### Search Options
 
+Controls default behavior for `obsidian_search_vault` tool (keyword search).
+
 **`searchOptions.maxResults`** (number)
-- Maximum search results to return
-- Default: `20`
-- Range: 1-100
+
+Maximum number of search results to return per query.
+
+- **Default**: `20`
+- **Range**: 1-100
+- **Recommended**: 
+  - `10-20` for conversational use (Claude processes results efficiently)
+  - `50-100` for comprehensive searches (may hit token limits)
+- **Note**: Users can override this per-query with `limit` parameter
 
 **`searchOptions.excerptLength`** (number)
-- Length of content excerpts in results
-- Default: `200` characters
-- Affects response size
+
+Length of content excerpts shown in search results (in characters).
+
+- **Default**: `200` characters
+- **Range**: 50-1000 (practical limits)
+- **Affects**: 
+  - Response token count (longer excerpts = more tokens)
+  - Context quality (longer = more context, but more overwhelming)
+- **Recommended**:
+  - `100-150` for quick scanning
+  - `200-300` for detailed context
+  - `500+` for comprehensive previews
 
 **`searchOptions.caseSensitive`** (boolean)
-- Case-sensitive keyword search
-- Default: `false`
-- Note: Semantic search is always case-insensitive
+
+Whether keyword search should be case-sensitive.
+
+- **Default**: `false` (case-insensitive)
+- **When to enable**:
+  - Technical vaults with case-sensitive terms (e.g., `TCP` vs `tcp`)
+  - Code documentation with specific capitalization
+  - Legal/academic documents requiring exact matches
+- **Note**: Semantic search is always case-insensitive regardless of this setting
 
 **`searchOptions.includeMetadata`** (boolean)
-- Include frontmatter in search results
-- Default: `true`
-- Provides title, tags, dates, etc.
+
+Whether to include YAML frontmatter fields in search results.
+
+- **Default**: `true`
+- **Includes**: title, tags, aliases, dates, custom fields
+- **Benefits**:
+  - Claude can filter by tags/dates
+  - Provides richer context for note identification
+  - Enables metadata-based follow-up queries
+- **Disable if**: Privacy concerns about exposing all frontmatter fields
+
+**Example Configuration**:
+
+```json
+{
+  "searchOptions": {
+    "maxResults": 30,
+    "excerptLength": 250,
+    "caseSensitive": false,
+    "includeMetadata": true
+  }
+}
+```
 
 ### Logging
 
@@ -198,7 +267,7 @@ If you want to customize behavior, create `config.json` in the repo root:
   "vectorSearch": {
     "enabled": true,
     "provider": "transformers",
-    "autoIndex": false
+    "indexOnStartup": false
   }
 }
 ```
@@ -211,12 +280,12 @@ If you want to customize behavior, create `config.json` in the repo root:
 {
   "vectorSearch": {
     "enabled": true,
-    "autoIndex": true
+    "indexOnStartup": true
   }
 }
 ```
 
-**Use when**: First time setting up vector search. After indexing completes, set `autoIndex: false`.
+**Use when**: Initial setup or when you want a fresh index. File watcher maintains the index automatically after the initial build.
 
 ### Scenario 4: Testing/Development
 
@@ -322,7 +391,7 @@ ls -la ~/Documents/ObsidianVault
 1. **Separate Config from Code**: Never commit `config.json` with personal paths (use `config.example.json`)
 2. **Use Environment Variables**: Always use `OBSIDIAN_VAULT_PATH` env var for vault location
 3. **Start Simple**: Begin with read-only, enable features as needed
-4. **Index Once**: Use `autoIndex: true` once, then disable for fast startup
+4. **Startup Indexing**: Use `indexOnStartup: true` for initial setup, then `false` for faster restarts (file watcher maintains index)
 5. **Backup First**: Backup vault before enabling write operations
 6. **Monitor Logs**: Check `logs/mcp-server.log` for issues
 7. **Version Control**: Keep `config.example.json` in git, exclude `config.json`

@@ -55,8 +55,8 @@ async function main() {
         await vectorStore.initialize();
         console.error("[MCP] Vector store initialized");
 
-        // Auto-index vault if configured
-        if (config.vectorSearch.autoIndex) {
+        // Index vault on startup if configured
+        if (config.vectorSearch.indexOnStartup) {
           console.error(
             "[MCP] Auto-indexing vault (this may take a few moments)..."
           );
@@ -72,7 +72,7 @@ async function main() {
 
           if (stats.totalDocuments === 0) {
             console.error(
-              "[MCP] WARNING: Vector store is empty. Use autoIndex: true to index vault on startup."
+              "[MCP] WARNING: Vector store is empty. Use indexOnStartup: true to index vault on startup."
             );
           }
         }

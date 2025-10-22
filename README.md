@@ -98,7 +98,7 @@ Create `config.json` in the project root:
     "enabled": true,
     "provider": "transformers",
     "model": "Xenova/all-MiniLM-L6-v2",
-    "autoIndex": false
+    "indexOnStartup": false
   },
   "searchOptions": {
     "maxResults": 20,
@@ -112,6 +112,16 @@ Create `config.json` in the project root:
   }
 }
 ```
+
+**Choosing the Right Embedding Model:**
+
+The default model (`Xenova/all-MiniLM-L6-v2`) works well for most users. Consider upgrading based on your hardware:
+
+- **High-end CPU** (Ryzen 9+, i9+, M3 Max+): Use `Xenova/bge-base-en-v1.5` for best quality
+- **Mid-range CPU** (Ryzen 5-7, i5-i7, M2): Use `Xenova/bge-small-en-v1.5` for improved quality
+- **Multilingual vault**: Use `Xenova/paraphrase-multilingual-MiniLM-L12-v2`
+
+See [Semantic Search Guide](docs/semantic-search.md#hardware-specific-recommendations) for detailed model comparison.
 
 > > **Note:** This still keeps the repo history on GitHub until you force-push.
 
@@ -455,7 +465,7 @@ Full configuration schema:
     enabled: boolean;             // Enable semantic search
     provider: "transformers";     // Embedding provider
     model?: string;               // Model name (default: Xenova/all-MiniLM-L6-v2)
-    autoIndex: boolean;           // Auto-index on startup
+    indexOnStartup: boolean;      // Index vault on server startup
   };
   searchOptions: {
     maxResults: number;           // Max search results (default: 20)
@@ -515,6 +525,10 @@ This server follows [MCP best practices](https://modelcontextprotocol.io/):
 - ✅ **Automatic file watching**: Real-time vector index updates when notes change (chokidar)
 - ✅ **Debounced re-indexing**: Smart 2-second delay prevents excessive rebuilds
 - ✅ **Seamless integration**: No manual re-indexing required
+
+**Breaking Changes**:
+
+- ⚠️ **Config property renamed**: `autoIndex` → `indexOnStartup` (better reflects that it only controls initial indexing on server startup, not the automatic file watching)
 
 ### v1.2.0 (October 2025) - Vector Search & Write Operations
 

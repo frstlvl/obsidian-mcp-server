@@ -33,7 +33,7 @@ export interface Config {
     provider: "transformers" | "anthropic";
     model?: string;
     anthropicApiKey?: string;
-    autoIndex?: boolean;
+    indexOnStartup?: boolean;
   };
   searchOptions: {
     maxResults: number;

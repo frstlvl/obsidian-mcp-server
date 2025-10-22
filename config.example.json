@@ -6,14 +6,15 @@
     ".trash/**",
     "node_modules/**",
     "**/node_modules/**",
-    ".git/**"
+    ".git/**",
+    "_assets/**"
   ],
   "enableWrite": true,
   "vectorSearch": {
     "enabled": true,
     "provider": "transformers",
     "model": "Xenova/all-MiniLM-L6-v2",
-    "autoIndex": false
+    "indexOnStartup": false
   },
   "searchOptions": {
     "maxResults": 20,
