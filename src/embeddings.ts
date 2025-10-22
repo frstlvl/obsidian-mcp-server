@@ -12,6 +12,7 @@
 import { LocalIndex } from "vectra";
 import { pipeline } from "@xenova/transformers";
 import { findAllNotes, readNote } from "./utils.js";
+import { logInfo, logError, logWarn } from "./logger.js";
 import * as path from "path";
 import * as fs from "fs/promises";
 
@@ -97,15 +98,13 @@ export class VectorStore {
       const indexExists = await this.index.isIndexCreated();
 
       if (!indexExists) {
-        console.error("[MCP Vector] Creating new index...");
+        logInfo("Creating new index...");
         await this.index.createIndex();
       }
 
-      console.error(
-        `[MCP Vector] Vector store initialized at: ${this.config.vectorStorePath}`
-      );
+      logInfo(`Vector store initialized at: ${this.config.vectorStorePath}`);
     } catch (error) {
-      console.error("[MCP Vector] Failed to initialize:", error);
+      logError("Failed to initialize:", error);
       throw error;
     }
   }
@@ -129,12 +128,12 @@ export class VectorStore {
   private async generateTransformerEmbedding(text: string): Promise<number[]> {
     try {
       if (!this.transformerPipeline) {
-        console.error("[MCP Vector] Initializing transformer model...");
+        logInfo("Initializing transformer model...");
         this.transformerPipeline = await pipeline(
           "feature-extraction",
           this.config.model
         );
-        console.error("[MCP Vector] Transformer model loaded");
+        logInfo("Transformer model loaded");
       }
 
       const output = await this.transformerPipeline(text, {
@@ -144,7 +143,7 @@ export class VectorStore {
 
       return Array.from(output.data as Float32Array);
     } catch (error) {
-      console.error("[MCP Vector] Transformer embedding failed:", error);
+      logError("Transformer embedding failed:", error);
       throw new Error(`Failed to generate embedding: ${error}`);
     }
   }
@@ -162,7 +161,7 @@ export class VectorStore {
 
     const existingIndex = await this.loadIndexMetadata();
 
-    console.error(`[MCP Vector] Starting indexing: ${notes.length} notes`);
+    logInfo(`Starting indexing: ${notes.length} notes`);
 
     for (const note of notes) {
       try {
@@ -215,15 +214,10 @@ export class VectorStore {
         stats.indexed++;
 
         if (stats.indexed % 10 === 0) {
-          console.error(
-            `[MCP Vector] Indexed ${stats.indexed}/${notes.length} notes`
-          );
+          logInfo(`Indexed ${stats.indexed}/${notes.length} notes`);
         }
       } catch (error) {
-        console.error(
-          `[MCP Vector] Failed to index ${note.relativePath}:`,
-          error
-        );
+        logError(`Failed to index ${note.relativePath}:`, error);
         stats.failed++;
       }
     }
@@ -239,7 +233,7 @@ export class VectorStore {
 
     await this.saveIndexMetadata(existingIndex);
 
-    console.error(`[MCP Vector] Indexing complete:`, stats);
+    logInfo(`Indexing complete:`, stats);
     return stats;
   }
 
@@ -485,7 +479,7 @@ export class VectorStore {
       try {
         await fs.access(fullPath);
       } catch {
-        console.error(`[MCP Vector] File not found: ${relativePath}`);
+        logWarn(`File not found: ${relativePath}`);
         return;
       }
 
@@ -533,10 +527,10 @@ export class VectorStore {
       };
       await this.saveIndexMetadata(metadata);
 
-      console.error(`[MCP Vector] Indexed note: ${relativePath}`);
+      logInfo(`Indexed note: ${relativePath}`);
     } catch (error) {
-      console.error(
-        `[MCP Vector] Failed to index ${relativePath}:`,
+      logError(
+        `Failed to index ${relativePath}:`,
         error instanceof Error ? error.message : error
       );
     }
@@ -559,11 +553,11 @@ export class VectorStore {
         delete metadata[relativePath];
         await this.saveIndexMetadata(metadata);
 
-        console.error(`[MCP Vector] Removed note from index: ${relativePath}`);
+        logInfo(`Removed note from index: ${relativePath}`);
       }
     } catch (error) {
-      console.error(
-        `[MCP Vector] Failed to remove ${relativePath}:`,
+      logError(
+        `Failed to remove ${relativePath}:`,
         error instanceof Error ? error.message : error
       );
     }

@@ -12,6 +12,7 @@
  */
 
 import { findAllNotes, readNote, getAllTags } from "./utils.js";
+import { logInfo, logError } from "./logger.js";
 import * as path from "path";
 
 export interface SearchOptions {
@@ -65,19 +66,19 @@ export async function searchVault(
     excerptLength = 200,
   } = options;
 
-  console.error(
-    `[Search] Starting search: query="${query}", tags=${tags?.join(",")}, folders=${folders?.join(",")}`
+  logInfo(
+    `Starting search: query="${query}", tags=${tags?.join(",")}, folders=${folders?.join(",")}`
   );
 
   // Find all notes
   const notes = await findAllNotes(vaultPath, includePatterns, excludePatterns);
-  console.error(`[Search] Found ${notes.length} total notes`);
+  logInfo(`Found ${notes.length} total notes`);
 
   const results: SearchResult[] = [];
   const queryLower = query.toLowerCase();
   const queryTerms = queryLower.split(/\s+/).filter((t) => t.length > 0);
 
-  console.error(`[Search] Query terms: [${queryTerms.join(", ")}]`);
+  logInfo(`Query terms: [${queryTerms.join(", ")}]`);
 
   let processedCount = 0;
   let matchedCount = 0;
@@ -195,15 +196,13 @@ export async function searchVault(
         uri: `obsidian://vault/${note.relativePath}`,
       });
     } catch (error) {
-      console.error(`[Search] Error processing note ${note.name}:`, error);
+      logError(`Error processing note ${note.name}:`, error);
       // Continue processing other notes
       continue;
     }
   }
 
-  console.error(
-    `[Search] Processed ${processedCount} notes, found ${matchedCount} matches`
-  );
+  logInfo(`Processed ${processedCount} notes, found ${matchedCount} matches`);
 
   // Sort by score (descending)
   results.sort((a, b) => b.score - a.score);
@@ -211,8 +210,8 @@ export async function searchVault(
   // Apply pagination
   const paginatedResults = results.slice(offset, offset + limit);
 
-  console.error(
-    `[Search] Returning ${paginatedResults.length} results (offset: ${offset}, limit: ${limit})`
+  logInfo(
+    `Returning ${paginatedResults.length} results (offset: ${offset}, limit: ${limit})`
   );
 
   return paginatedResults;

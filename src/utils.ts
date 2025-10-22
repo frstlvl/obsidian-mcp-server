@@ -14,6 +14,7 @@ import * as path from "path";
 import { fileURLToPath } from "url";
 import matter from "gray-matter";
 import fg from "fast-glob";
+import { logInfo, logError, logWarn } from "./logger.js";
 
 // Get the directory where this script is located
 const __filename = fileURLToPath(import.meta.url);
@@ -92,21 +93,19 @@ export async function loadConfig(): Promise<Config> {
   if (config) {
     // Override vault path with env var if present
     if (vaultPathEnv) {
-      console.error(
-        "[Config] Using vault path from OBSIDIAN_VAULT_PATH environment variable"
-      );
+      logInfo("Using vault path from OBSIDIAN_VAULT_PATH environment variable");
       config.vaultPath = vaultPathEnv;
     }
 
     // Validate vault path exists
     await validateVaultPath(config.vaultPath);
 
-    console.error(`[Config] Configuration loaded from: ${configPath}`);
+    logInfo(`Configuration loaded from: ${configPath}`);
     return config;
   }
 
   // No config file found, use defaults
-  console.error("[Config] Could not load config file, using defaults");
+  logWarn("Could not load config file, using defaults");
 
   // Determine vault path - require environment variable if no config
   const vaultPath = vaultPathEnv;
@@ -144,7 +143,7 @@ export async function loadConfig(): Promise<Config> {
     },
   };
 
-  console.error("[Config] Using default configuration");
+  logInfo("Using default configuration");
   return defaultConfig;
 }
 
@@ -162,7 +161,7 @@ async function validateVaultPath(vaultPath: string): Promise<void> {
     // Try to read directory to verify permissions
     await fs.readdir(vaultPath);
 
-    console.error(`[Config] Vault path validated: ${vaultPath}`);
+    logInfo(`Vault path validated: ${vaultPath}`);
   } catch (error) {
     throw new Error(
       `Invalid vault path: ${vaultPath}. ` +
@@ -188,9 +187,9 @@ export async function findAllNotes(
   // Normalize vault path
   const normalizedVaultPath = path.resolve(vaultPath);
 
-  console.error(`[Utils] Scanning vault: ${normalizedVaultPath}`);
-  console.error(`[Utils] Include patterns: ${includePatterns.join(", ")}`);
-  console.error(`[Utils] Exclude patterns: ${excludePatterns.join(", ")}`);
+  logInfo(`Scanning vault: ${normalizedVaultPath}`);
+  logInfo(`Include patterns: ${includePatterns.join(", ")}`);
+  logInfo(`Exclude patterns: ${excludePatterns.join(", ")}`);
 
   try {
     // Use fast-glob to find files
@@ -202,7 +201,7 @@ export async function findAllNotes(
       dot: false, // Don't include hidden files
     });
 
-    console.error(`[Utils] Found ${files.length} markdown files`);
+    logInfo(`Found ${files.length} markdown files`);
 
     for (const file of files) {
       try {
@@ -226,16 +225,16 @@ export async function findAllNotes(
           frontmatter: parsed.data,
         });
       } catch (error) {
-        console.error(`[Utils] Error processing file ${file}:`, error);
+        logError(`Error processing file ${file}:`, error);
         // Continue processing other files
         continue;
       }
     }
 
-    console.error(`[Utils] Successfully processed ${notes.length} notes`);
+    logInfo(`Successfully processed ${notes.length} notes`);
     return notes;
   } catch (error) {
-    console.error(`[Utils] Error scanning vault:`, error);
+    logError(`Error scanning vault:`, error);
     throw new Error(
       `Failed to scan vault: ${error instanceof Error ? error.message : String(error)}`
     );
@@ -280,9 +279,7 @@ export function isPathSafe(requestedPath: string, vaultPath: string): boolean {
   const isSafe = normalized.startsWith(normalizedVaultPath);
 
   if (!isSafe) {
-    console.error(
-      `[Security] Path traversal attempt blocked: ${requestedPath}`
-    );
+    logWarn(`Path traversal attempt blocked: ${requestedPath}`);
   }
 
   return isSafe;
@@ -445,7 +442,7 @@ export async function createNote(
   // Write file
   await fs.writeFile(finalPath, fileContent, "utf-8");
 
-  console.error(`[Write] Created note: ${relativePath}`);
+  logInfo(`Created note: ${relativePath}`);
   return finalPath;
 }
 
@@ -509,8 +506,8 @@ export async function updateNote(
         ...frontmatter,
       };
     } catch (error) {
-      console.error(
-        `[Write] Could not parse existing frontmatter, using new frontmatter only:`,
+      logWarn(
+        "Could not parse existing frontmatter, using new frontmatter only:",
         error
       );
     }
@@ -527,7 +524,7 @@ export async function updateNote(
   // Write file
   await fs.writeFile(finalPath, fileContent, "utf-8");
 
-  console.error(`[Write] Updated note: ${relativePath}`);
+  logInfo(`Updated note: ${relativePath}`);
   return finalPath;
 }
 
@@ -574,6 +571,6 @@ export async function deleteNote(
   // Delete file
   await fs.unlink(finalPath);
 
-  console.error(`[Write] Deleted note: ${relativePath}`);
+  logInfo(`Deleted note: ${relativePath}`);
   return finalPath;
 }

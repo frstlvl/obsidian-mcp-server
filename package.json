@@ -42,6 +42,7 @@
     "fast-glob": "^3.3.2",
     "gray-matter": "^4.0.3",
     "vectra": "^0.11.1",
+    "winston": "^3.18.3",
     "zod": "^3.23.8"
   },
   "devDependencies": {
