@@ -313,7 +313,9 @@ Error Handling:
     },
     async (params: SearchVaultInput) => {
       logInfo(`Executing tool: obsidian_search_vault`);
-      logInfo(`Query: "${params.query}", Limit: ${params.limit}, Format: ${params.response_format}`);
+      logInfo(
+        `Query: "${params.query}", Limit: ${params.limit}, Format: ${params.response_format}`
+      );
 
       try {
         // Execute search
@@ -386,7 +388,9 @@ Error Handling:
             `Use 'limit' parameter (e.g., limit=10), add 'tags' or 'folders' filters, or use 'offset' for pagination to see more results.`;
 
           responseText += truncationMessage;
-          logInfo(`Response truncated: ${results.length} -> ${truncatedResults.length} results`);
+          logInfo(
+            `Response truncated: ${results.length} -> ${truncatedResults.length} results`
+          );
         }
 
         return {
@@ -810,7 +814,9 @@ Note: Requires vector store to be initialized. First-time use may take a few mom
       },
       async (params: SemanticSearchInput) => {
         logInfo(`Executing tool: obsidian_semantic_search`);
-        logInfo(`Query: "${params.query}", Limit: ${params.limit}, Hybrid: ${params.hybrid}`);
+        logInfo(
+          `Query: "${params.query}", Limit: ${params.limit}, Hybrid: ${params.hybrid}`
+        );
 
         try {
           let results;
@@ -1069,5 +1075,3 @@ function formatSemanticResultsJSON(
 
   return JSON.stringify(response, null, 2);
 }
-
-
