@@ -1,13 +1,11 @@
 # Obsidian MCP Server
 
-> [!Important] Production-Ready MCP Server
+> **⚠️ Production-Ready MCP Server**  
 > Provides real-time Claude AI access to Obsidian vaults via Model Context Protocol (MCP)
 
 ## Overview
 
 This MCP server enables Claude to query, search, and read notes from Obsidian vaults **without token limitations**. Unlike Claude Projects which load all documents into context, this server provides dynamic, on-demand access to your knowledge base.
-
-### Key Features
 
 ## Features
 
@@ -116,7 +114,7 @@ Create `config.json` in the project root:
 }
 ```
 
-**Note**: The vault path is controlled by the `OBSIDIAN_VAULT_PATH` environment variable. The config file controls feature flags and behavior.
+> > **Note:** This still keeps the repo history on GitHub until you force-push.
 
 ### Claude Desktop Integration
 
