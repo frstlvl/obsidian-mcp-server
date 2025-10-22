@@ -178,7 +178,7 @@ After configuration, **completely quit and restart Claude Desktop** for changes 
 ## Documentation
 
 - **[Configuration Guide](docs/configuration.md)** - Complete configuration reference
-- **[Vector Search Guide](docs/vector-search.md)** - Semantic search setup and usage
+- **[Semantic Search Guide](docs/semantic-search.md)** - Semantic search setup and usage
 
 ## Usage
 

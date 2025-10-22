@@ -23,6 +23,6 @@
   },
   "logging": {
     "level": "info",
-    "file": "_data/mcp-server.log"
+    "file": "logs/mcp-server.log"
   }
 }

@@ -80,7 +80,7 @@ If you want to customize behavior, create `config.json` in the repo root:
   },
   "logging": {
     "level": "info",
-    "file": "_data/mcp-server.log"
+    "file": "logs/mcp-server.log"
   }
 }
 ```
@@ -172,7 +172,7 @@ If you want to customize behavior, create `config.json` in the repo root:
 
 **`logging.file`** (string)
 - Log file path (relative to repo root)
-- Default: `"_data/mcp-server.log"`
+- Default: `"logs/mcp-server.log"`
 - Creates directory if not exists
 
 ## Configuration Scenarios
@@ -324,7 +324,7 @@ ls -la ~/Documents/ObsidianVault
 3. **Start Simple**: Begin with read-only, enable features as needed
 4. **Index Once**: Use `autoIndex: true` once, then disable for fast startup
 5. **Backup First**: Backup vault before enabling write operations
-6. **Monitor Logs**: Check `_data/mcp-server.log` for issues
+6. **Monitor Logs**: Check `logs/mcp-server.log` for issues
 7. **Version Control**: Keep `config.example.json` in git, exclude `config.json`
 8. **Platform Paths**:
    - Windows: Use double backslashes `\\` in JSON config files
