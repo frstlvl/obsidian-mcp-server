@@ -26,6 +26,40 @@ import { VectorStore } from "./embeddings.js";
 import { initLogger, logInfo, logError, logWarn } from "./logger.js";
 import chokidar, { type FSWatcher } from "chokidar";
 import * as path from "path";
+import { spawn } from "child_process";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+/**
+ * Spawn a detached background worker to handle indexing
+ * The worker survives Claude Desktop restarts
+ */
+function spawnIndexingWorker(vaultPath: string): void {
+  const workerScript = path.join(__dirname, "indexing-worker.js");
+  const configPath = process.env.OBSIDIAN_CONFIG_PATH || "";
+
+  const worker = spawn(
+    process.execPath,
+    ["--expose-gc", "--max-old-space-size=16384", workerScript],
+    {
+      detached: true,
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        OBSIDIAN_VAULT_PATH: vaultPath,
+        OBSIDIAN_CONFIG_PATH: configPath,
+      },
+    }
+  );
+
+  // Unref so the parent can exit without waiting
+  worker.unref();
+
+  logInfo(`Spawned indexing worker (PID: ${worker.pid}) - runs independently`);
+}
 
 async function main() {
   try {
@@ -78,10 +112,10 @@ async function main() {
         logInfo(indexReason);
 
         if (shouldIndex) {
-          logInfo("Indexing vault (this may take a few moments)...");
-          const stats = await vectorStore.indexVault();
+          logInfo("Starting background indexing worker...");
+          spawnIndexingWorker(config.vaultPath);
           logInfo(
-            `Indexing complete: ${stats.indexed} indexed, ${stats.skipped} skipped, ${stats.failed} failed`
+            "Indexing worker started in background - server ready to handle requests"
           );
         } else {
           const stats = await vectorStore.getStats();

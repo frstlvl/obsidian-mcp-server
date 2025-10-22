@@ -187,7 +187,7 @@ export class VectorStore {
         await this.transformerPipeline.dispose();
       }
       this.transformerPipeline = null;
-      
+
       // Force garbage collection if available
       if (global.gc) {
         global.gc();
@@ -248,7 +248,7 @@ export class VectorStore {
             `Embedding generation timed out after ${EMBEDDING_TIMEOUT_MS}ms`
           );
           logDebug(`Successfully generated embedding for: ${relativePath}`);
-          
+
           // Small delay to let native code clean up (every 10 notes)
           if (stats.indexed % 10 === 0) {
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -307,11 +307,14 @@ export class VectorStore {
         }
 
         // Periodically dispose and recreate transformer pipeline to prevent memory leaks
-        if (stats.indexed % 100 === 0) {
+        if (stats.indexed % 500 === 0 && stats.indexed > 0) {
           logInfo(
             `Refreshing transformer pipeline at ${stats.indexed} notes to prevent memory buildup...`
           );
           await this.disposeTransformerPipeline();
+          // Give system time to fully clean up before recreating
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          logInfo("Pipeline disposed, will recreate on next embedding...");
           // Pipeline will be recreated on next embedding generation
         }
       } catch (error) {
