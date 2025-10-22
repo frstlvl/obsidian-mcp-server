@@ -518,6 +518,25 @@ This server follows [MCP best practices](https://modelcontextprotocol.io/):
 
 ## Changelog
 
+### v1.4.0 (October 2025) - Smart Auto-Indexing Detection
+
+**New Features**:
+
+- ✅ **Smart `indexOnStartup` modes**: `"auto"` (smart detection), `"always"`, `"never"`
+- ✅ **Automatic model change detection**: No manual config toggling when switching models
+- ✅ **Index validation**: Detects missing, corrupted, or incompatible indexes
+- ✅ **Model metadata storage**: Stores model info in index for validation
+- ✅ **Seamless model switching**: Just change model in config and restart - auto re-indexes
+
+**Breaking Changes**:
+
+- ⚠️ **`indexOnStartup` enhanced**: Now accepts string values (`"auto"`, `"always"`, `"never"`) in addition to boolean (backwards compatible)
+- ⚠️ **Default changed**: `indexOnStartup` now defaults to `"auto"` instead of `false`
+
+**Migration**:
+- Old config with `true`/`false` still works (mapped to `"always"`/`"never"`)
+- Recommended: Update to `"auto"` for best experience
+
 ### v1.3.0 (October 2025) - Automatic Index Updates
 
 **New Features**:

@@ -354,7 +354,7 @@ Wait for download to complete (models are 23-109 MB).
 
 **Problem**: Indexing takes forever (> 30 minutes)
 
-**Solution**: 
+**Solution**:
 - Check CPU usage (should be near 100% during indexing)
 - Consider using a smaller model
 - Exclude large folders with `excludePatterns`
@@ -415,7 +415,7 @@ graph TD
     E[Claude Query] -->|Semantic Search Tool| F[Query Embeddings]
     F -->|Vector Similarity| D
     D -->|Top K Results| G[Claude Response]
-    
+
     style C fill:#e1f5ff
     style D fill:#fff4e1
     style F fill:#e1f5ff
@@ -487,10 +487,10 @@ watcher.on('change', async (filePath) => {
   updateQueue.set(filePath, setTimeout(async () => {
     // Re-generate embedding for changed note
     const embedding = await generateEmbedding(updatedContent);
-    
+
     // Update vector store
     await vectorStore.upsert({ id: filePath, vector: embedding });
-    
+
     console.log(`[Vector] Re-indexed: ${filePath}`);
   }, 2000));
 });

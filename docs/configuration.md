@@ -200,7 +200,7 @@ Maximum number of search results to return per query.
 
 - **Default**: `20`
 - **Range**: 1-100
-- **Recommended**: 
+- **Recommended**:
   - `10-20` for conversational use (Claude processes results efficiently)
   - `50-100` for comprehensive searches (may hit token limits)
 - **Note**: Users can override this per-query with `limit` parameter
@@ -211,7 +211,7 @@ Length of content excerpts shown in search results (in characters).
 
 - **Default**: `200` characters
 - **Range**: 50-1000 (practical limits)
-- **Affects**: 
+- **Affects**:
   - Response token count (longer excerpts = more tokens)
   - Context quality (longer = more context, but more overwhelming)
 - **Recommended**:
