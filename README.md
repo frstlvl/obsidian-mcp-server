@@ -1,6 +1,5 @@
 # Obsidian MCP Server
 
-> **⚠️ Production-Ready MCP Server**  
 > Provides real-time Claude AI access to Obsidian vaults via Model Context Protocol (MCP)
 
 ## Overview
