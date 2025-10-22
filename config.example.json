@@ -1,0 +1,28 @@
+{
+  "includePatterns": ["**/*.md"],
+  "excludePatterns": [
+    "_archive/**",
+    ".obsidian/**",
+    ".trash/**",
+    "node_modules/**",
+    "**/node_modules/**",
+    ".git/**"
+  ],
+  "enableWrite": true,
+  "vectorSearch": {
+    "enabled": true,
+    "provider": "transformers",
+    "model": "Xenova/all-MiniLM-L6-v2",
+    "autoIndex": false
+  },
+  "searchOptions": {
+    "maxResults": 20,
+    "excerptLength": 200,
+    "caseSensitive": false,
+    "includeMetadata": true
+  },
+  "logging": {
+    "level": "info",
+    "file": "_data/mcp-server.log"
+  }
+}

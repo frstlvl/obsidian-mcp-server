@@ -1,0 +1,91 @@
+# Node
+node_modules/
+dist/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+pnpm-debug.log*
+
+# TypeScript
+*.tsbuildinfo
+*.d.ts.map
+
+# Environment
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+.env.test
+
+# IDEs
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.swp
+
+# GitHub/Personal Development Files
+.github/
+*.swo
+*~
+.DS_Store
+*.sublime-workspace
+*.sublime-project
+
+# Testing
+coverage/
+.nyc_output/
+*.test.js
+*.spec.js
+
+# Build
+build/
+out/
+*.tgz
+
+# Package managers
+.npm
+.yarn/
+.pnp.*
+.yarn-integrity
+
+# Misc
+*.tgz
+.eslintcache
+.cache
+.parcel-cache
+.next/
+.nuxt/
+.vuepress/dist
+.serverless/
+.fusebox/
+.dynamodb/
+.tern-port
+.vscode-test
+
+# OS
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Local config
+config.json
+config.local.json
+config-test.json
+config-vector-test.json
+
+# Vector store data
+.mcp-vector-store/
+
+# Logs
+_data/
+logs/
+
+# Project specific
+/net-commander
+
