@@ -12,7 +12,7 @@
 import { LocalIndex } from "vectra";
 import { pipeline } from "@xenova/transformers";
 import { findAllNotes, readNote } from "./utils.js";
-import { logInfo, logError, logWarn } from "./logger.js";
+import { logInfo, logError, logWarn, logDebug } from "./logger.js";
 import * as path from "path";
 import * as fs from "fs/promises";
 
@@ -56,6 +56,16 @@ export interface IndexMetadata {
       }
     | IndexMetadataMeta
     | undefined;
+}
+
+/**
+ * Helper function to safely convert tags to a comma-separated string
+ */
+function tagsToString(tags: any): string {
+  if (!tags) return "";
+  if (Array.isArray(tags)) return tags.join(",");
+  if (typeof tags === "string") return tags;
+  return String(tags);
 }
 
 /**
@@ -168,6 +178,8 @@ export class VectorStore {
         const relativePath = note.relativePath;
         const fullPath = path.join(this.vaultPath, relativePath);
 
+        logDebug(`Processing note: ${relativePath}`);
+
         // Skip if already indexed and not changed
         if (!forceReindex && existingIndex[relativePath]) {
           const entry = existingIndex[relativePath];
@@ -186,8 +198,23 @@ export class VectorStore {
           frontmatter: noteData.frontmatter || {},
         });
 
-        const embedding = await this.generateEmbedding(embeddingText);
+        logDebug(
+          `Generating embedding for: ${relativePath} (${embeddingText.length} chars)`
+        );
 
+        let embedding;
+        try {
+          embedding = await this.generateEmbedding(embeddingText);
+          logDebug(`Successfully generated embedding for: ${relativePath}`);
+        } catch (embError) {
+          logError(
+            `Embedding generation failed for ${relativePath}:`,
+            embError
+          );
+          throw embError; // Re-throw to be caught by outer try-catch
+        }
+
+        logDebug(`Inserting into index: ${relativePath}`);
         // Add to Vectra index using insertItem API
         await this.index.insertItem({
           id: relativePath,
@@ -198,7 +225,7 @@ export class VectorStore {
               note.title ||
               path.basename(relativePath, ".md"),
             path: relativePath,
-            tags: noteData.frontmatter?.tags?.join(",") || "",
+            tags: tagsToString(noteData.frontmatter?.tags),
             lastIndexed: Date.now(),
             excerpt: noteData.content.substring(0, 1000),
           },
@@ -216,9 +243,21 @@ export class VectorStore {
         if (stats.indexed % 10 === 0) {
           logInfo(`Indexed ${stats.indexed}/${notes.length} notes`);
         }
+
+        // Periodically save progress and trigger garbage collection
+        if (stats.indexed % 50 === 0) {
+          logInfo(`Saving progress checkpoint at ${stats.indexed} notes...`);
+          await this.saveIndexMetadata(existingIndex);
+          // Force garbage collection if available
+          if (global.gc) {
+            logDebug("Running garbage collection...");
+            global.gc();
+          }
+        }
       } catch (error) {
         logError(`Failed to index ${note.relativePath}:`, error);
         stats.failed++;
+        // Continue processing other notes
       }
     }
 
@@ -512,7 +551,7 @@ export class VectorStore {
           title:
             noteData.frontmatter?.title || path.basename(relativePath, ".md"),
           path: relativePath,
-          tags: noteData.frontmatter?.tags?.join(",") || "",
+          tags: tagsToString(noteData.frontmatter?.tags),
           lastIndexed: Date.now(),
           excerpt: noteData.content.substring(0, 1000),
         },
