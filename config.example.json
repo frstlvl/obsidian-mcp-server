@@ -14,7 +14,7 @@
     "enabled": true,
     "provider": "transformers",
     "model": "Xenova/all-MiniLM-L6-v2",
-    "indexOnStartup": false
+    "indexOnStartup": "auto"
   },
   "searchOptions": {
     "maxResults": 20,

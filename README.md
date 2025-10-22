@@ -98,7 +98,7 @@ Create `config.json` in the project root:
     "enabled": true,
     "provider": "transformers",
     "model": "Xenova/all-MiniLM-L6-v2",
-    "indexOnStartup": false
+    "indexOnStartup": "auto"
   },
   "searchOptions": {
     "maxResults": 20,
@@ -465,7 +465,7 @@ Full configuration schema:
     enabled: boolean;             // Enable semantic search
     provider: "transformers";     // Embedding provider
     model?: string;               // Model name (default: Xenova/all-MiniLM-L6-v2)
-    indexOnStartup: boolean;      // Index vault on server startup
+    indexOnStartup: "auto" | "always" | "never" | boolean;  // Smart indexing (default: "auto")
   };
   searchOptions: {
     maxResults: number;           // Max search results (default: 20)

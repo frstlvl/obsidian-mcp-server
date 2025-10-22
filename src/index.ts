@@ -55,10 +55,29 @@ async function main() {
         await vectorStore.initialize();
         console.error("[MCP] Vector store initialized");
 
-        // Index vault on startup if configured
-        if (config.vectorSearch.indexOnStartup) {
+        // Determine if indexing is needed
+        const indexOnStartup = config.vectorSearch.indexOnStartup;
+        let shouldIndex = false;
+        let indexReason = "";
+
+        if (indexOnStartup === true || indexOnStartup === "always") {
+          shouldIndex = true;
+          indexReason = "indexOnStartup set to always";
+        } else if (indexOnStartup === false || indexOnStartup === "never") {
+          shouldIndex = false;
+          indexReason = "indexOnStartup disabled";
+        } else {
+          // "auto" mode (or undefined = default to auto)
+          const decision = await vectorStore.shouldReindex();
+          shouldIndex = decision.reindex;
+          indexReason = decision.reason;
+        }
+
+        console.error(`[MCP] ${indexReason}`);
+
+        if (shouldIndex) {
           console.error(
-            "[MCP] Auto-indexing vault (this may take a few moments)..."
+            "[MCP] Indexing vault (this may take a few moments)..."
           );
           const stats = await vectorStore.indexVault();
           console.error(
@@ -69,12 +88,6 @@ async function main() {
           console.error(
             `[MCP] Vector store ready: ${stats.totalDocuments} documents indexed`
           );
-
-          if (stats.totalDocuments === 0) {
-            console.error(
-              "[MCP] WARNING: Vector store is empty. Use indexOnStartup: true to index vault on startup."
-            );
-          }
         }
 
         // Setup file watcher for automatic index updates

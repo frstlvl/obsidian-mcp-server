@@ -37,6 +37,26 @@ export interface VectorSearchOptions {
   filter?: Record<string, any>;
 }
 
+export interface IndexMetadataMeta {
+  model: string;
+  modelDimensions?: number;
+  provider: string;
+  createdAt: number;
+  lastIndexedAt: number;
+  version: string;
+}
+
+export interface IndexMetadata {
+  __meta__?: IndexMetadataMeta;
+  [notePath: string]:
+    | {
+        lastModified: number;
+        lastIndexed: number;
+      }
+    | IndexMetadataMeta
+    | undefined;
+}
+
 /**
  * Vector Store Manager
  * Handles embedding generation and semantic search using Vectra
@@ -151,10 +171,13 @@ export class VectorStore {
 
         // Skip if already indexed and not changed
         if (!forceReindex && existingIndex[relativePath]) {
-          const stat = await fs.stat(fullPath);
-          if (stat.mtimeMs === existingIndex[relativePath].lastModified) {
-            stats.skipped++;
-            continue;
+          const entry = existingIndex[relativePath];
+          if (entry && "lastModified" in entry) {
+            const stat = await fs.stat(fullPath);
+            if (stat.mtimeMs === entry.lastModified) {
+              stats.skipped++;
+              continue;
+            }
           }
         }
 
@@ -204,6 +227,15 @@ export class VectorStore {
         stats.failed++;
       }
     }
+
+    // Update metadata with model info
+    existingIndex.__meta__ = {
+      model: this.config.model!,
+      provider: this.config.provider,
+      createdAt: existingIndex.__meta__?.createdAt || Date.now(),
+      lastIndexedAt: Date.now(),
+      version: "1.4.0", // Update this with actual version
+    };
 
     await this.saveIndexMetadata(existingIndex);
 
@@ -341,7 +373,13 @@ export class VectorStore {
     const items = await this.index.listItems();
     const metadata = await this.loadIndexMetadata();
 
-    const lastIndexedTimes = Object.values(metadata)
+    const lastIndexedTimes = Object.entries(metadata)
+      .filter(([key]) => key !== "__meta__")
+      .map(([, value]) => value)
+      .filter(
+        (m): m is { lastModified: number; lastIndexed: number } =>
+          m !== undefined && "lastIndexed" in m
+      )
       .map((m) => m.lastIndexed)
       .filter((t) => t > 0);
 
@@ -353,20 +391,73 @@ export class VectorStore {
   }
 
   /**
+   * Check if re-indexing is needed (auto mode)
+   */
+  async shouldReindex(): Promise<{
+    reindex: boolean;
+    reason: string;
+  }> {
+    try {
+      // Check if index directory exists
+      const indexExists = await this.index.isIndexCreated();
+      if (!indexExists) {
+        return {
+          reindex: true,
+          reason: "No existing index found (first-time setup)",
+        };
+      }
+
+      // Load metadata
+      const metadata = await this.loadIndexMetadata();
+
+      // Check if metadata has model info
+      if (!metadata.__meta__) {
+        return {
+          reindex: true,
+          reason: "Legacy index detected (no model metadata), upgrading",
+        };
+      }
+
+      // Check model compatibility
+      const currentModel = this.config.model || "Xenova/all-MiniLM-L6-v2";
+      const storedModel = metadata.__meta__.model;
+
+      if (storedModel !== currentModel) {
+        return {
+          reindex: true,
+          reason: `Model changed: ${storedModel} → ${currentModel}`,
+        };
+      }
+
+      // Check index health
+      const stats = await this.getStats();
+      if (stats.totalDocuments === 0) {
+        return {
+          reindex: true,
+          reason: "Index exists but is empty",
+        };
+      }
+
+      // All checks passed
+      return {
+        reindex: false,
+        reason: "Index valid and up-to-date",
+      };
+    } catch (error) {
+      return {
+        reindex: true,
+        reason: `Index validation failed: ${error instanceof Error ? error.message : "unknown error"}`,
+      };
+    }
+  }
+
+  /**
    * Load index metadata
    */
-  private async loadIndexMetadata(): Promise<
-    Record<
-      string,
-      {
-        lastModified: number;
-        lastIndexed: number;
-      }
-    >
-  > {
+  private async loadIndexMetadata(): Promise<IndexMetadata> {
     try {
       const data = await fs.readFile(this.indexPath, "utf-8");
-      return JSON.parse(data);
+      return JSON.parse(data) as IndexMetadata;
     } catch (error) {
       return {};
     }
@@ -375,9 +466,7 @@ export class VectorStore {
   /**
    * Save index metadata
    */
-  private async saveIndexMetadata(
-    metadata: Record<string, any>
-  ): Promise<void> {
+  private async saveIndexMetadata(metadata: IndexMetadata): Promise<void> {
     await fs.writeFile(
       this.indexPath,
       JSON.stringify(metadata, null, 2),

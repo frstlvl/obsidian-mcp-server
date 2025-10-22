@@ -59,7 +59,7 @@ Add the `vectorSearch` section to your `config.json`:
     "enabled": true,
     "provider": "transformers",
     "model": "Xenova/all-MiniLM-L6-v2",
-    "indexOnStartup": true
+    "indexOnStartup": "auto"
   },
   "searchOptions": {
     "maxResults": 20,
@@ -239,10 +239,12 @@ Edit your `config.json`:
     "enabled": true,
     "provider": "transformers",
     "model": "Xenova/bge-base-en-v1.5",  // ← Change this
-    "indexOnStartup": true                // ← Set to true for re-indexing
+    "indexOnStartup": "auto"              // ← Use "auto" (or "always" to force)
   }
 }
 ```
+
+**Note**: With `"auto"` mode, the server will automatically detect the model change and re-index. You don't need to manually toggle the setting!
 
 #### Step 2: Delete Existing Vector Index
 
@@ -322,20 +324,6 @@ Ask Claude to search:
 ```
 
 Claude should use the `obsidian_semantic_search` tool and return results.
-
-#### Step 6: Optimize for Future Startups
-
-Once indexing completes successfully, edit `config.json`:
-
-```json
-{
-  "vectorSearch": {
-    "indexOnStartup": false  // ← Change to false for faster startups
-  }
-}
-```
-
-This prevents re-indexing on every restart. The file watcher will keep the index updated automatically.
 
 ### Quick Reference
 

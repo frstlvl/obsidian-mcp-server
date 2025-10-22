@@ -136,13 +136,13 @@ The embedding model that converts your notes into numerical vectors for semantic
 
 **Available Models**:
 
-| Model | Dimensions | Speed | Quality | Best For |
-|-------|-----------|-------|---------|----------|
-| `Xenova/all-MiniLM-L6-v2` | 384 | Fast (50ms) | Good | Default, balanced performance |
-| `Xenova/bge-small-en-v1.5` | 384 | Fast (60ms) | Excellent | Best quality at 384-dim |
-| `Xenova/all-mpnet-base-v2` | 768 | Medium (150ms) | Very Good | Higher quality, 2x storage |
-| `Xenova/bge-base-en-v1.5` | 768 | Medium (150ms) | Excellent | State-of-the-art English |
-| `Xenova/paraphrase-multilingual-MiniLM-L12-v2` | 384 | Slow (100ms) | Good | Multilingual vaults |
+| Model                                          | Dimensions | Speed          | Quality   | Best For                      |
+| ---------------------------------------------- | ---------- | -------------- | --------- | ----------------------------- |
+| `Xenova/all-MiniLM-L6-v2`                      | 384        | Fast (50ms)    | Good      | Default, balanced performance |
+| `Xenova/bge-small-en-v1.5`                     | 384        | Fast (60ms)    | Excellent | Best quality at 384-dim       |
+| `Xenova/all-mpnet-base-v2`                     | 768        | Medium (150ms) | Very Good | Higher quality, 2x storage    |
+| `Xenova/bge-base-en-v1.5`                      | 768        | Medium (150ms) | Excellent | State-of-the-art English      |
+| `Xenova/paraphrase-multilingual-MiniLM-L12-v2` | 384        | Slow (100ms)   | Good      | Multilingual vaults           |
 
 **Choosing a Model**:
 
@@ -156,16 +156,39 @@ The embedding model that converts your notes into numerical vectors for semantic
 
 **Performance Impact** (5,000 note vault):
 
-| Model | Initial Index Time | Storage Size | Re-index Single Note |
-|-------|-------------------|--------------|---------------------|
-| 384-dim models | 4-6 minutes | ~20 MB | 50-100ms |
-| 768-dim models | 12-15 minutes | ~40 MB | 150-200ms |
+| Model          | Initial Index Time | Storage Size | Re-index Single Note |
+| -------------- | ------------------ | ------------ | -------------------- |
+| 384-dim models | 4-6 minutes        | ~20 MB       | 50-100ms             |
+| 768-dim models | 12-15 minutes      | ~40 MB       | 150-200ms            |
 
-**`vectorSearch.indexOnStartup`** (boolean)
-- Index vault when server starts
-- Default: `false` (recommended for fast startup after initial index)
-- Set to `true` for first-time indexing or to rebuild index
-- File watcher maintains the index automatically regardless of this setting
+**`vectorSearch.indexOnStartup`** (string | boolean)
+
+Controls when the vault should be indexed on server startup.
+
+**Default**: `"auto"` (smart detection)
+
+**Options**:
+
+| Value             | Behavior        | Use Case                                              |
+| ----------------- | --------------- | ----------------------------------------------------- |
+| `"auto"`          | Smart detection | **Recommended**: Automatically re-indexes when needed |
+| `"always"` / true | Always re-index | Debugging, testing, forcing fresh index               |
+| `"never"` / false | Never re-index  | CI/CD with pre-built index, manual control            |
+
+**"auto" Mode Logic** (recommended for all users):
+
+1. ✅ **No index exists** → Indexes vault (first-time setup)
+2. ✅ **Model changed** → Re-indexes with new model
+3. ✅ **Index corrupted** → Rebuilds index
+4. ✅ **Index valid** → Skips indexing (fast startup)
+
+**Benefits of "auto" mode**:
+- Zero manual configuration when changing models
+- Automatic recovery from corrupted indexes
+- Fast startups when index is valid
+- "Just works" experience
+
+**Note**: File watcher maintains the index automatically after initial build, regardless of this setting.
 
 ### Search Options
 
@@ -267,25 +290,25 @@ Whether to include YAML frontmatter fields in search results.
   "vectorSearch": {
     "enabled": true,
     "provider": "transformers",
-    "indexOnStartup": false
+    "indexOnStartup": "auto"
   }
 }
 ```
 
-**Use when**: Production setup with all features.
+**Use when**: Production setup with all features (recommended).
 
-### Scenario 3: Initial Indexing
+### Scenario 3: Force Re-Indexing
 
 ```json
 {
   "vectorSearch": {
     "enabled": true,
-    "indexOnStartup": true
+    "indexOnStartup": "always"
   }
 }
 ```
 
-**Use when**: Initial setup or when you want a fresh index. File watcher maintains the index automatically after the initial build.
+**Use when**: Debugging, testing, or forcing a fresh index build.
 
 ### Scenario 4: Testing/Development
 
