@@ -108,7 +108,7 @@ Create `config.json` in the project root:
   },
   "logging": {
     "level": "info",
-    "file": "_data/mcp-server.log"
+    "file": "logs/mcp-server.log"
   }
 }
 ```
@@ -507,6 +507,14 @@ This server follows [MCP best practices](https://modelcontextprotocol.io/):
 - ✅ Search-tool pattern for large datasets
 
 ## Changelog
+
+### v1.3.0 (October 2025) - Automatic Index Updates
+
+**New Features**:
+
+- ✅ **Automatic file watching**: Real-time vector index updates when notes change (chokidar)
+- ✅ **Debounced re-indexing**: Smart 2-second delay prevents excessive rebuilds
+- ✅ **Seamless integration**: No manual re-indexing required
 
 ### v1.2.0 (October 2025) - Vector Search & Write Operations
 
