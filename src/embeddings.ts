@@ -177,6 +177,25 @@ export class VectorStore {
   }
 
   /**
+   * Dispose of the transformer pipeline to free resources
+   */
+  private async disposeTransformerPipeline(): Promise<void> {
+    if (this.transformerPipeline) {
+      logDebug("Disposing transformer pipeline to free resources...");
+      // @ts-ignore - dispose method may not be typed
+      if (typeof this.transformerPipeline.dispose === "function") {
+        await this.transformerPipeline.dispose();
+      }
+      this.transformerPipeline = null;
+      
+      // Force garbage collection if available
+      if (global.gc) {
+        global.gc();
+      }
+    }
+  }
+
+  /**
    * Index entire vault
    */
   async indexVault(forceReindex: boolean = false): Promise<{
@@ -229,6 +248,11 @@ export class VectorStore {
             `Embedding generation timed out after ${EMBEDDING_TIMEOUT_MS}ms`
           );
           logDebug(`Successfully generated embedding for: ${relativePath}`);
+          
+          // Small delay to let native code clean up (every 10 notes)
+          if (stats.indexed % 10 === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+          }
         } catch (embError) {
           logError(
             `Embedding generation failed for ${relativePath}:`,
@@ -280,6 +304,15 @@ export class VectorStore {
             logDebug("Running garbage collection...");
             global.gc();
           }
+        }
+
+        // Periodically dispose and recreate transformer pipeline to prevent memory leaks
+        if (stats.indexed % 100 === 0) {
+          logInfo(
+            `Refreshing transformer pipeline at ${stats.indexed} notes to prevent memory buildup...`
+          );
+          await this.disposeTransformerPipeline();
+          // Pipeline will be recreated on next embedding generation
         }
       } catch (error) {
         logError(`Failed to index ${note.relativePath}:`, error);
