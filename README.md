@@ -33,7 +33,7 @@ This MCP server enables Claude to query, search, and read notes from Obsidian va
 
 ```powershell
 # 1. Clone or navigate to repository
-cd /path/to/obsidian-mcp
+cd /path/to/obsidian-mcp-server
 
 # 2. Install dependencies
 npm install
@@ -49,7 +49,7 @@ Test-Path dist\index.js  # Should return True
 
 ```bash
 # 1. Clone or navigate to repository
-cd ~/obsidian-mcp
+cd ~/obsidian-mcp-server
 
 # 2. Install dependencies
 npm install
