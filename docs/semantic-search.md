@@ -59,7 +59,7 @@ Add the `vectorSearch` section to your `config.json`:
     "enabled": true,
     "provider": "transformers",
     "model": "Xenova/all-MiniLM-L6-v2",
-    "indexOnStartup": true
+    "indexOnStartup": "auto"
   },
   "searchOptions": {
     "maxResults": 20,
@@ -239,10 +239,12 @@ Edit your `config.json`:
     "enabled": true,
     "provider": "transformers",
     "model": "Xenova/bge-base-en-v1.5",  // ← Change this
-    "indexOnStartup": true                // ← Set to true for re-indexing
+    "indexOnStartup": "auto"              // ← Use "auto" (or "always" to force)
   }
 }
 ```
+
+**Note**: With `"auto"` mode, the server will automatically detect the model change and re-index. You don't need to manually toggle the setting!
 
 #### Step 2: Delete Existing Vector Index
 
@@ -323,20 +325,6 @@ Ask Claude to search:
 
 Claude should use the `obsidian_semantic_search` tool and return results.
 
-#### Step 6: Optimize for Future Startups
-
-Once indexing completes successfully, edit `config.json`:
-
-```json
-{
-  "vectorSearch": {
-    "indexOnStartup": false  // ← Change to false for faster startups
-  }
-}
-```
-
-This prevents re-indexing on every restart. The file watcher will keep the index updated automatically.
-
 ### Quick Reference
 
 | Step | Action                      | Command (Windows)                                      | Command (macOS/Linux)           |
@@ -366,7 +354,7 @@ Wait for download to complete (models are 23-109 MB).
 
 **Problem**: Indexing takes forever (> 30 minutes)
 
-**Solution**: 
+**Solution**:
 - Check CPU usage (should be near 100% during indexing)
 - Consider using a smaller model
 - Exclude large folders with `excludePatterns`
@@ -427,7 +415,7 @@ graph TD
     E[Claude Query] -->|Semantic Search Tool| F[Query Embeddings]
     F -->|Vector Similarity| D
     D -->|Top K Results| G[Claude Response]
-    
+
     style C fill:#e1f5ff
     style D fill:#fff4e1
     style F fill:#e1f5ff
@@ -499,10 +487,10 @@ watcher.on('change', async (filePath) => {
   updateQueue.set(filePath, setTimeout(async () => {
     // Re-generate embedding for changed note
     const embedding = await generateEmbedding(updatedContent);
-    
+
     // Update vector store
     await vectorStore.upsert({ id: filePath, vector: embedding });
-    
+
     console.log(`[Vector] Re-indexed: ${filePath}`);
   }, 2000));
 });

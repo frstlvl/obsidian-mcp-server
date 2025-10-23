@@ -12,8 +12,27 @@
 import { LocalIndex } from "vectra";
 import { pipeline } from "@xenova/transformers";
 import { findAllNotes, readNote } from "./utils.js";
+import { logInfo, logError, logWarn, logDebug } from "./logger.js";
 import * as path from "path";
 import * as fs from "fs/promises";
+
+const EMBEDDING_TIMEOUT_MS = 30000; // 30 second timeout for embedding generation
+
+/**
+ * Wraps a promise with a timeout
+ */
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  errorMessage: string
+): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
+    ),
+  ]);
+}
 
 export interface EmbeddingConfig {
   provider: "anthropic" | "transformers";
@@ -35,6 +54,36 @@ export interface VectorSearchOptions {
   limit?: number;
   minScore?: number;
   filter?: Record<string, any>;
+}
+
+export interface IndexMetadataMeta {
+  model: string;
+  modelDimensions?: number;
+  provider: string;
+  createdAt: number;
+  lastIndexedAt: number;
+  version: string;
+}
+
+export interface IndexMetadata {
+  __meta__?: IndexMetadataMeta;
+  [notePath: string]:
+    | {
+        lastModified: number;
+        lastIndexed: number;
+      }
+    | IndexMetadataMeta
+    | undefined;
+}
+
+/**
+ * Helper function to safely convert tags to a comma-separated string
+ */
+function tagsToString(tags: any): string {
+  if (!tags) return "";
+  if (Array.isArray(tags)) return tags.join(",");
+  if (typeof tags === "string") return tags;
+  return String(tags);
 }
 
 /**
@@ -77,15 +126,13 @@ export class VectorStore {
       const indexExists = await this.index.isIndexCreated();
 
       if (!indexExists) {
-        console.error("[MCP Vector] Creating new index...");
+        logInfo("Creating new index...");
         await this.index.createIndex();
       }
 
-      console.error(
-        `[MCP Vector] Vector store initialized at: ${this.config.vectorStorePath}`
-      );
+      logInfo(`Vector store initialized at: ${this.config.vectorStorePath}`);
     } catch (error) {
-      console.error("[MCP Vector] Failed to initialize:", error);
+      logError("Failed to initialize:", error);
       throw error;
     }
   }
@@ -109,12 +156,12 @@ export class VectorStore {
   private async generateTransformerEmbedding(text: string): Promise<number[]> {
     try {
       if (!this.transformerPipeline) {
-        console.error("[MCP Vector] Initializing transformer model...");
+        logInfo("Initializing transformer model...");
         this.transformerPipeline = await pipeline(
           "feature-extraction",
           this.config.model
         );
-        console.error("[MCP Vector] Transformer model loaded");
+        logInfo("Transformer model loaded");
       }
 
       const output = await this.transformerPipeline(text, {
@@ -124,8 +171,27 @@ export class VectorStore {
 
       return Array.from(output.data as Float32Array);
     } catch (error) {
-      console.error("[MCP Vector] Transformer embedding failed:", error);
+      logError("Transformer embedding failed:", error);
       throw new Error(`Failed to generate embedding: ${error}`);
+    }
+  }
+
+  /**
+   * Dispose of the transformer pipeline to free resources
+   */
+  private async disposeTransformerPipeline(): Promise<void> {
+    if (this.transformerPipeline) {
+      logDebug("Disposing transformer pipeline to free resources...");
+      // @ts-ignore - dispose method may not be typed
+      if (typeof this.transformerPipeline.dispose === "function") {
+        await this.transformerPipeline.dispose();
+      }
+      this.transformerPipeline = null;
+
+      // Force garbage collection if available
+      if (global.gc) {
+        global.gc();
+      }
     }
   }
 
@@ -142,19 +208,24 @@ export class VectorStore {
 
     const existingIndex = await this.loadIndexMetadata();
 
-    console.error(`[MCP Vector] Starting indexing: ${notes.length} notes`);
+    logInfo(`Starting indexing: ${notes.length} notes`);
 
     for (const note of notes) {
       try {
         const relativePath = note.relativePath;
         const fullPath = path.join(this.vaultPath, relativePath);
 
+        logDebug(`Processing note: ${relativePath}`);
+
         // Skip if already indexed and not changed
         if (!forceReindex && existingIndex[relativePath]) {
-          const stat = await fs.stat(fullPath);
-          if (stat.mtimeMs === existingIndex[relativePath].lastModified) {
-            stats.skipped++;
-            continue;
+          const entry = existingIndex[relativePath];
+          if (entry && "lastModified" in entry) {
+            const stat = await fs.stat(fullPath);
+            if (stat.mtimeMs === entry.lastModified) {
+              stats.skipped++;
+              continue;
+            }
           }
         }
 
@@ -164,8 +235,35 @@ export class VectorStore {
           frontmatter: noteData.frontmatter || {},
         });
 
-        const embedding = await this.generateEmbedding(embeddingText);
+        logDebug(
+          `Generating embedding for: ${relativePath} (${embeddingText.length} chars)`
+        );
 
+        let embedding;
+        try {
+          // Wrap embedding generation with timeout
+          embedding = await withTimeout(
+            this.generateEmbedding(embeddingText),
+            EMBEDDING_TIMEOUT_MS,
+            `Embedding generation timed out after ${EMBEDDING_TIMEOUT_MS}ms`
+          );
+          logDebug(`Successfully generated embedding for: ${relativePath}`);
+
+          // Small delay to let native code clean up (every 10 notes)
+          if (stats.indexed % 10 === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+          }
+        } catch (embError) {
+          logError(
+            `Embedding generation failed for ${relativePath}:`,
+            embError
+          );
+          logWarn(`Skipping note due to embedding failure: ${relativePath}`);
+          stats.failed++;
+          continue; // Skip this note and continue with the next one
+        }
+
+        logDebug(`Inserting into index: ${relativePath}`);
         // Add to Vectra index using insertItem API
         await this.index.insertItem({
           id: relativePath,
@@ -176,7 +274,7 @@ export class VectorStore {
               note.title ||
               path.basename(relativePath, ".md"),
             path: relativePath,
-            tags: noteData.frontmatter?.tags?.join(",") || "",
+            tags: tagsToString(noteData.frontmatter?.tags),
             lastIndexed: Date.now(),
             excerpt: noteData.content.substring(0, 1000),
           },
@@ -192,22 +290,62 @@ export class VectorStore {
         stats.indexed++;
 
         if (stats.indexed % 10 === 0) {
-          console.error(
-            `[MCP Vector] Indexed ${stats.indexed}/${notes.length} notes`
+          logInfo(
+            `Indexed ${stats.indexed}/${notes.length} notes (${stats.failed} failed, ${stats.skipped} skipped)`
           );
         }
+
+        // Periodically save progress and trigger garbage collection
+        if (stats.indexed % 50 === 0) {
+          logInfo(`Saving progress checkpoint at ${stats.indexed} notes...`);
+          await this.saveIndexMetadata(existingIndex);
+          // Force garbage collection if available
+          if (global.gc) {
+            logDebug("Running garbage collection...");
+            global.gc();
+          }
+        }
+
+        // Periodically dispose and recreate transformer pipeline to prevent memory leaks
+        if (stats.indexed % 500 === 0 && stats.indexed > 0) {
+          logInfo(
+            `Refreshing transformer pipeline at ${stats.indexed} notes to prevent memory buildup...`
+          );
+          await this.disposeTransformerPipeline();
+          // Give system time to fully clean up before recreating
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          logInfo("Pipeline disposed, will recreate on next embedding...");
+          // Pipeline will be recreated on next embedding generation
+        }
       } catch (error) {
-        console.error(
-          `[MCP Vector] Failed to index ${note.relativePath}:`,
-          error
-        );
+        logError(`Failed to index ${note.relativePath}:`, error);
+        logWarn(`Skipping note due to unexpected error: ${note.relativePath}`);
         stats.failed++;
+        // Continue processing other notes
       }
     }
 
+    // Update metadata with model info
+    existingIndex.__meta__ = {
+      model: this.config.model!,
+      provider: this.config.provider,
+      createdAt: existingIndex.__meta__?.createdAt || Date.now(),
+      lastIndexedAt: Date.now(),
+      version: "1.4.0", // Update this with actual version
+    };
+
     await this.saveIndexMetadata(existingIndex);
 
-    console.error(`[MCP Vector] Indexing complete:`, stats);
+    logInfo(
+      `Indexing completed: indexed=${stats.indexed}, skipped=${stats.skipped}, failed=${stats.failed}`
+    );
+
+    if (stats.failed > 0) {
+      logWarn(
+        `⚠️  ${stats.failed} notes failed to index. Check logs for details on which notes were skipped.`
+      );
+    }
+
     return stats;
   }
 
@@ -341,7 +479,13 @@ export class VectorStore {
     const items = await this.index.listItems();
     const metadata = await this.loadIndexMetadata();
 
-    const lastIndexedTimes = Object.values(metadata)
+    const lastIndexedTimes = Object.entries(metadata)
+      .filter(([key]) => key !== "__meta__")
+      .map(([, value]) => value)
+      .filter(
+        (m): m is { lastModified: number; lastIndexed: number } =>
+          m !== undefined && "lastIndexed" in m
+      )
       .map((m) => m.lastIndexed)
       .filter((t) => t > 0);
 
@@ -353,20 +497,73 @@ export class VectorStore {
   }
 
   /**
+   * Check if re-indexing is needed (auto mode)
+   */
+  async shouldReindex(): Promise<{
+    reindex: boolean;
+    reason: string;
+  }> {
+    try {
+      // Check if index directory exists
+      const indexExists = await this.index.isIndexCreated();
+      if (!indexExists) {
+        return {
+          reindex: true,
+          reason: "No existing index found (first-time setup)",
+        };
+      }
+
+      // Load metadata
+      const metadata = await this.loadIndexMetadata();
+
+      // Check if metadata has model info
+      if (!metadata.__meta__) {
+        return {
+          reindex: true,
+          reason: "Legacy index detected (no model metadata), upgrading",
+        };
+      }
+
+      // Check model compatibility
+      const currentModel = this.config.model || "Xenova/all-MiniLM-L6-v2";
+      const storedModel = metadata.__meta__.model;
+
+      if (storedModel !== currentModel) {
+        return {
+          reindex: true,
+          reason: `Model changed: ${storedModel} → ${currentModel}`,
+        };
+      }
+
+      // Check index health
+      const stats = await this.getStats();
+      if (stats.totalDocuments === 0) {
+        return {
+          reindex: true,
+          reason: "Index exists but is empty",
+        };
+      }
+
+      // All checks passed
+      return {
+        reindex: false,
+        reason: "Index valid and up-to-date",
+      };
+    } catch (error) {
+      return {
+        reindex: true,
+        reason: `Index validation failed: ${error instanceof Error ? error.message : "unknown error"}`,
+      };
+    }
+  }
+
+  /**
    * Load index metadata
    */
-  private async loadIndexMetadata(): Promise<
-    Record<
-      string,
-      {
-        lastModified: number;
-        lastIndexed: number;
-      }
-    >
-  > {
+  private async loadIndexMetadata(): Promise<IndexMetadata> {
     try {
       const data = await fs.readFile(this.indexPath, "utf-8");
-      return JSON.parse(data);
+      return JSON.parse(data) as IndexMetadata;
     } catch (error) {
       return {};
     }
@@ -375,9 +572,7 @@ export class VectorStore {
   /**
    * Save index metadata
    */
-  private async saveIndexMetadata(
-    metadata: Record<string, any>
-  ): Promise<void> {
+  private async saveIndexMetadata(metadata: IndexMetadata): Promise<void> {
     await fs.writeFile(
       this.indexPath,
       JSON.stringify(metadata, null, 2),
@@ -396,7 +591,7 @@ export class VectorStore {
       try {
         await fs.access(fullPath);
       } catch {
-        console.error(`[MCP Vector] File not found: ${relativePath}`);
+        logWarn(`File not found: ${relativePath}`);
         return;
       }
 
@@ -429,7 +624,7 @@ export class VectorStore {
           title:
             noteData.frontmatter?.title || path.basename(relativePath, ".md"),
           path: relativePath,
-          tags: noteData.frontmatter?.tags?.join(",") || "",
+          tags: tagsToString(noteData.frontmatter?.tags),
           lastIndexed: Date.now(),
           excerpt: noteData.content.substring(0, 1000),
         },
@@ -444,10 +639,10 @@ export class VectorStore {
       };
       await this.saveIndexMetadata(metadata);
 
-      console.error(`[MCP Vector] Indexed note: ${relativePath}`);
+      logInfo(`Indexed note: ${relativePath}`);
     } catch (error) {
-      console.error(
-        `[MCP Vector] Failed to index ${relativePath}:`,
+      logError(
+        `Failed to index ${relativePath}:`,
         error instanceof Error ? error.message : error
       );
     }
@@ -470,11 +665,11 @@ export class VectorStore {
         delete metadata[relativePath];
         await this.saveIndexMetadata(metadata);
 
-        console.error(`[MCP Vector] Removed note from index: ${relativePath}`);
+        logInfo(`Removed note from index: ${relativePath}`);
       }
     } catch (error) {
-      console.error(
-        `[MCP Vector] Failed to remove ${relativePath}:`,
+      logError(
+        `Failed to remove ${relativePath}:`,
         error instanceof Error ? error.message : error
       );
     }

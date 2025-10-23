@@ -23,27 +23,66 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { loadConfig } from "./utils.js";
 import { setupObsidianHandlers } from "./obsidian-server.js";
 import { VectorStore } from "./embeddings.js";
+import { initLogger, logInfo, logError, logWarn } from "./logger.js";
 import chokidar, { type FSWatcher } from "chokidar";
 import * as path from "path";
+import { spawn } from "child_process";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+/**
+ * Spawn a detached background worker to handle indexing
+ * The worker survives Claude Desktop restarts
+ */
+function spawnIndexingWorker(vaultPath: string): void {
+  const workerScript = path.join(__dirname, "indexing-worker.js");
+  const configPath = process.env.OBSIDIAN_CONFIG_PATH || "";
+
+  const worker = spawn(
+    process.execPath,
+    ["--expose-gc", "--max-old-space-size=16384", workerScript],
+    {
+      detached: true,
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        OBSIDIAN_VAULT_PATH: vaultPath,
+        OBSIDIAN_CONFIG_PATH: configPath,
+      },
+    }
+  );
+
+  // Unref so the parent can exit without waiting
+  worker.unref();
+
+  logInfo(`Spawned indexing worker (PID: ${worker.pid}) - runs independently`);
+}
 
 async function main() {
   try {
     // Load configuration
     const config = await loadConfig();
 
-    console.error("[MCP] Starting Obsidian MCP Server...");
-    console.error(`[MCP] Vault path: ${config.vaultPath}`);
-    console.error(
-      `[MCP] Write operations: ${config.enableWrite ? "ENABLED" : "DISABLED"}`
-    );
+    // Initialize logger with config
+    initLogger(config.logging);
+
+    logInfo("Starting Obsidian MCP Server...");
+    logInfo(`Vault path: ${config.vaultPath}`);
+    logInfo(`Write operations: ${config.enableWrite ? "ENABLED" : "DISABLED"}`);
 
     // Initialize vector store if enabled
     let vectorStore: VectorStore | undefined;
     let watcher: FSWatcher | undefined;
 
     if (config.vectorSearch?.enabled) {
-      console.error("[MCP] Initializing vector search...");
-      console.error(`[MCP] Provider: ${config.vectorSearch.provider}`);
+      logInfo("Initializing vector search...");
+      logInfo(`Provider: ${config.vectorSearch.provider}`);
+      logInfo(
+        `Model: ${config.vectorSearch.model || "Xenova/all-MiniLM-L6-v2 (default)"}`
+      );
 
       try {
         vectorStore = new VectorStore(config.vaultPath, {
@@ -53,33 +92,44 @@ async function main() {
         });
 
         await vectorStore.initialize();
-        console.error("[MCP] Vector store initialized");
+        logInfo("Vector store initialized");
 
-        // Index vault on startup if configured
-        if (config.vectorSearch.indexOnStartup) {
-          console.error(
-            "[MCP] Auto-indexing vault (this may take a few moments)..."
-          );
-          const stats = await vectorStore.indexVault();
-          console.error(
-            `[MCP] Indexing complete: ${stats.indexed} indexed, ${stats.skipped} skipped, ${stats.failed} failed`
+        // Determine if indexing is needed
+        const indexOnStartup = config.vectorSearch.indexOnStartup;
+        let shouldIndex = false;
+        let indexReason = "";
+
+        if (indexOnStartup === true || indexOnStartup === "always") {
+          shouldIndex = true;
+          indexReason = "indexOnStartup set to always";
+        } else if (indexOnStartup === false || indexOnStartup === "never") {
+          shouldIndex = false;
+          indexReason = "indexOnStartup disabled";
+        } else {
+          // "auto" mode (or undefined = default to auto)
+          const decision = await vectorStore.shouldReindex();
+          shouldIndex = decision.reindex;
+          indexReason = decision.reason;
+        }
+
+        logInfo(indexReason);
+
+        if (shouldIndex) {
+          logInfo("Starting background indexing worker...");
+          spawnIndexingWorker(config.vaultPath);
+          logInfo(
+            "Indexing worker started in background - server ready to handle requests"
           );
         } else {
           const stats = await vectorStore.getStats();
-          console.error(
-            `[MCP] Vector store ready: ${stats.totalDocuments} documents indexed`
+          logInfo(
+            `Vector store ready: ${stats.totalDocuments} documents indexed`
           );
-
-          if (stats.totalDocuments === 0) {
-            console.error(
-              "[MCP] WARNING: Vector store is empty. Use indexOnStartup: true to index vault on startup."
-            );
-          }
         }
 
         // Setup file watcher for automatic index updates
-        console.error(
-          "[MCP] Setting up file system watcher for automatic index updates..."
+        logInfo(
+          "Setting up file system watcher for automatic index updates..."
         );
         watcher = chokidar.watch(config.vaultPath, {
           ignored: [
@@ -105,7 +155,7 @@ async function main() {
             if (!filePath.endsWith(".md")) return;
 
             const relativePath = path.relative(config.vaultPath, filePath);
-            console.error(`[MCP] File added: ${relativePath}`);
+            logInfo(`File added: ${relativePath}`);
 
             // Debounce: clear existing timeout and set new one
             if (updateQueue.has(relativePath)) {
@@ -123,7 +173,7 @@ async function main() {
             if (!filePath.endsWith(".md")) return;
 
             const relativePath = path.relative(config.vaultPath, filePath);
-            console.error(`[MCP] File changed: ${relativePath}`);
+            logInfo(`File changed: ${relativePath}`);
 
             // Debounce: clear existing timeout and set new one
             if (updateQueue.has(relativePath)) {
@@ -141,7 +191,7 @@ async function main() {
             if (!filePath.endsWith(".md")) return;
 
             const relativePath = path.relative(config.vaultPath, filePath);
-            console.error(`[MCP] File deleted: ${relativePath}`);
+            logInfo(`File deleted: ${relativePath}`);
 
             // Cancel pending update if any
             if (updateQueue.has(relativePath)) {
@@ -151,28 +201,21 @@ async function main() {
 
             // Remove from index immediately (no debounce needed for deletions)
             vectorStore!.removeNote(relativePath).catch((err) => {
-              console.error(`[MCP] Failed to remove note: ${err}`);
+              logError(`Failed to remove note: ${err}`);
             });
           })
           .on("error", (error: unknown) => {
-            console.error("[MCP] File watcher error:", error);
+            logError("File watcher error:", error);
           });
 
-        console.error(
-          "[MCP] File system watcher active - index will update automatically"
-        );
+        logInfo("File system watcher active - index will update automatically");
       } catch (error) {
-        console.error(
-          "[MCP] WARNING: Failed to initialize vector search:",
-          error
-        );
-        console.error("[MCP] Continuing without semantic search capability...");
+        logWarn("WARNING: Failed to initialize vector search:", error);
+        logWarn("Continuing without semantic search capability...");
         vectorStore = undefined;
       }
     } else {
-      console.error(
-        "[MCP] Vector search: DISABLED (enable in config for semantic search)"
-      );
+      logInfo("Vector search: DISABLED (enable in config for semantic search)");
     }
 
     // Create MCP server instance
@@ -190,27 +233,24 @@ async function main() {
     // Connect server to transport
     await server.connect(transport);
 
-    console.error("[MCP] Server started successfully");
-    console.error("[MCP] Listening on stdio transport...");
-    console.error("[MCP] Ready for connections from Claude");
+    logInfo("Server started successfully");
+    logInfo("Listening on stdio transport...");
+    logInfo("Ready for connections from Claude");
 
     // Store watcher in a way we can access it from signal handlers
     if (watcher) {
       (global as any).__fileWatcher = watcher;
     }
   } catch (error) {
-    console.error("[MCP] FATAL: Failed to start server:", error);
-    console.error(
-      "[MCP] Stack trace:",
-      error instanceof Error ? error.stack : "N/A"
-    );
+    logError("FATAL: Failed to start server:", error);
+    logError("Stack trace:", error instanceof Error ? error.stack : "N/A");
     process.exit(1);
   }
 }
 
 // Handle graceful shutdown
 process.on("SIGINT", () => {
-  console.error("[MCP] Received SIGINT, shutting down gracefully...");
+  logInfo("Received SIGINT, shutting down gracefully...");
   const watcher = (global as any).__fileWatcher;
   if (watcher) {
     watcher.close();
@@ -219,7 +259,7 @@ process.on("SIGINT", () => {
 });
 
 process.on("SIGTERM", () => {
-  console.error("[MCP] Received SIGTERM, shutting down gracefully...");
+  logInfo("Received SIGTERM, shutting down gracefully...");
   const watcher = (global as any).__fileWatcher;
   if (watcher) {
     watcher.close();
@@ -228,12 +268,12 @@ process.on("SIGTERM", () => {
 });
 
 process.on("uncaughtException", (error) => {
-  console.error("[MCP] Uncaught exception:", error);
+  logError("Uncaught exception:", error);
   process.exit(1);
 });
 
 process.on("unhandledRejection", (reason, promise) => {
-  console.error("[MCP] Unhandled rejection at:", promise, "reason:", reason);
+  logError("Unhandled rejection at:", promise, "reason:", reason);
   process.exit(1);
 });
 

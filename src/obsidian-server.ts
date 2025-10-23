@@ -19,6 +19,7 @@ import type { Config } from "./utils.js";
 import { searchVault, SearchOptions, SearchResult } from "./search.js";
 import { createNote, updateNote, deleteNote } from "./utils.js";
 import { VectorStore } from "./embeddings.js";
+import { logInfo, logError } from "./logger.js";
 
 // Response format enum
 enum ResponseFormat {
@@ -230,7 +231,7 @@ export function setupObsidianHandlers(
    * This approach is more efficient and works better with the MCP protocol.
    */
 
-  console.error("[MCP] Obsidian handlers configured successfully");
+  logInfo("Obsidian handlers configured successfully");
 
   // =====================================================================
   // TOOL HANDLERS
@@ -311,9 +312,9 @@ Error Handling:
       },
     },
     async (params: SearchVaultInput) => {
-      console.error(`[MCP] Executing tool: obsidian_search_vault`);
-      console.error(
-        `[MCP] Query: "${params.query}", Limit: ${params.limit}, Format: ${params.response_format}`
+      logInfo(`Executing tool: obsidian_search_vault`);
+      logInfo(
+        `Query: "${params.query}", Limit: ${params.limit}, Format: ${params.response_format}`
       );
 
       try {
@@ -334,7 +335,7 @@ Error Handling:
           searchOptions
         );
 
-        console.error(`[MCP] Search returned ${results.length} results`);
+        logInfo(`Search returned ${results.length} results`);
 
         // Handle empty results
         if (results.length === 0) {
@@ -387,8 +388,8 @@ Error Handling:
             `Use 'limit' parameter (e.g., limit=10), add 'tags' or 'folders' filters, or use 'offset' for pagination to see more results.`;
 
           responseText += truncationMessage;
-          console.error(
-            `[MCP] Response truncated: ${results.length} -> ${truncatedResults.length} results`
+          logInfo(
+            `Response truncated: ${results.length} -> ${truncatedResults.length} results`
           );
         }
 
@@ -401,7 +402,7 @@ Error Handling:
           ],
         };
       } catch (error) {
-        console.error(`[MCP] ERROR: Search failed:`, error);
+        logError(` Search failed:`, error);
         return {
           isError: true,
           content: [
@@ -463,8 +464,8 @@ Example:
       },
     },
     async (params: CreateNoteInput) => {
-      console.error(`[MCP] Executing tool: obsidian_create_note`);
-      console.error(`[MCP] Path: "${params.path}"`);
+      logInfo(`Executing tool: obsidian_create_note`);
+      logInfo(`Path: "${params.path}"`);
 
       try {
         // Check if write operations are enabled
@@ -520,7 +521,7 @@ You can now read this note using the URI above or search for it by name.`;
           ],
         };
       } catch (error) {
-        console.error(`[MCP] ERROR: Create note failed:`, error);
+        logError(` Create note failed:`, error);
         return {
           isError: true,
           content: [
@@ -580,8 +581,8 @@ Example:
       },
     },
     async (params: UpdateNoteInput) => {
-      console.error(`[MCP] Executing tool: obsidian_update_note`);
-      console.error(`[MCP] Path: "${params.path}"`);
+      logInfo(`Executing tool: obsidian_update_note`);
+      logInfo(`Path: "${params.path}"`);
 
       try {
         // Check if write operations are enabled
@@ -640,7 +641,7 @@ The note has been updated with the new content.`;
           ],
         };
       } catch (error) {
-        console.error(`[MCP] ERROR: Update note failed:`, error);
+        logError(` Update note failed:`, error);
         return {
           isError: true,
           content: [
@@ -697,8 +698,8 @@ Example:
       },
     },
     async (params: DeleteNoteInput) => {
-      console.error(`[MCP] Executing tool: obsidian_delete_note`);
-      console.error(`[MCP] Path: "${params.path}"`);
+      logInfo(`Executing tool: obsidian_delete_note`);
+      logInfo(`Path: "${params.path}"`);
 
       try {
         // Check if write operations are enabled
@@ -753,7 +754,7 @@ Example:
           ],
         };
       } catch (error) {
-        console.error(`[MCP] ERROR: Delete note failed:`, error);
+        logError(` Delete note failed:`, error);
         return {
           isError: true,
           content: [
@@ -812,9 +813,9 @@ Note: Requires vector store to be initialized. First-time use may take a few mom
         },
       },
       async (params: SemanticSearchInput) => {
-        console.error(`[MCP] Executing tool: obsidian_semantic_search`);
-        console.error(
-          `[MCP] Query: "${params.query}", Limit: ${params.limit}, Hybrid: ${params.hybrid}`
+        logInfo(`Executing tool: obsidian_semantic_search`);
+        logInfo(
+          `Query: "${params.query}", Limit: ${params.limit}, Hybrid: ${params.hybrid}`
         );
 
         try {
@@ -852,9 +853,7 @@ Note: Requires vector store to be initialized. First-time use may take a few mom
             });
           }
 
-          console.error(
-            `[MCP] Semantic search returned ${results.length} results`
-          );
+          logInfo(`Semantic search returned ${results.length} results`);
 
           // Handle empty results
           if (results.length === 0) {
@@ -919,7 +918,7 @@ Note: Requires vector store to be initialized. First-time use may take a few mom
             ],
           };
         } catch (error) {
-          console.error(`[MCP] ERROR: Semantic search failed:`, error);
+          logError(` Semantic search failed:`, error);
           return {
             isError: true,
             content: [
@@ -933,10 +932,10 @@ Note: Requires vector store to be initialized. First-time use may take a few mom
       }
     );
 
-    console.error("[MCP] Semantic search tool registered successfully");
+    logInfo("Semantic search tool registered successfully");
   }
 
-  console.error("[MCP] Obsidian handlers configured successfully");
+  logInfo("Obsidian handlers configured successfully");
 }
 
 /**
