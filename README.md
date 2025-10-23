@@ -123,7 +123,29 @@ The default model (`Xenova/all-MiniLM-L6-v2`) works well for most users. Conside
 
 See [Semantic Search Guide](docs/semantic-search.md#hardware-specific-recommendations) for detailed model comparison.
 
-> > **Note:** This still keeps the repo history on GitHub until you force-push.
+### Initial Indexing (Required for Large Vaults)
+
+**Important:** For vaults with 1,000+ notes or when switching embedding models, run initial indexing **standalone** before using Claude Desktop.
+
+**Quick Start:**
+
+```powershell
+# Windows
+$env:OBSIDIAN_VAULT_PATH = "X:\Path\To\Your\Vault"
+$env:OBSIDIAN_CONFIG_PATH = "D:\repos\obsidian-mcp-server\config.json"
+node --expose-gc --max-old-space-size=16384 dist\index.js
+```
+
+```bash
+# macOS/Linux
+export OBSIDIAN_VAULT_PATH="/path/to/vault"
+export OBSIDIAN_CONFIG_PATH="$HOME/obsidian-mcp-server/config.json"
+node --expose-gc --max-old-space-size=16384 dist/index.js
+```
+
+After indexing completes, configure Claude Desktop (see below) for daily usage.
+
+> **📚 See [Indexing Workflow Guide](docs/indexing-workflow.md)** for detailed instructions, troubleshooting, and model switching procedures.
 
 ### Claude Desktop Integration
 
@@ -187,6 +209,7 @@ After configuration, **completely quit and restart Claude Desktop** for changes 
 
 ## Documentation
 
+- **[Indexing Workflow Guide](docs/indexing-workflow.md)** - Initial setup, model switching, and troubleshooting
 - **[Configuration Guide](docs/configuration.md)** - Complete configuration reference
 - **[Semantic Search Guide](docs/semantic-search.md)** - Semantic search setup and usage
 
