@@ -30,7 +30,10 @@ pnpm-debug.log*
 *.swp
 
 # GitHub/Personal Development Files
-.github/
+# Note: copilot-instructions.md is tracked for project documentation
+.github/*
+!.github/copilot-instructions.md
+!.github/README.md
 *.swo
 *~
 .DS_Store
