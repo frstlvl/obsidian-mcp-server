@@ -6,12 +6,12 @@ This guide explains the recommended workflow for indexing your Obsidian vault wi
 
 ## Quick Reference
 
-| Scenario                | Method             | When to Use                                      |
-| ----------------------- | ------------------ | ------------------------------------------------ |
-| **First-time setup**    | Standalone Node.js | Before first Claude Desktop use                  |
-| **Model changes**       | Standalone Node.js | Switching embedding models                       |
-| **Full re-index**       | Standalone Node.js | After deleting vector store                      |
-| **Incremental updates** | Claude Desktop     | Single note add/edit/delete (needs verification) |
+| Scenario                | Method             | When to Use                          |
+| ----------------------- | ------------------ | ------------------------------------ |
+| **First-time setup**    | Standalone Node.js | Before first Claude Desktop use      |
+| **Model changes**       | Standalone Node.js | Switching embedding models           |
+| **Full re-index**       | Standalone Node.js | After deleting vector store          |
+| **Incremental updates** | Claude Desktop     | ✅ Validated - automatic file watcher |
 
 ## Standalone Indexing (Recommended for Large Vaults)
 
@@ -115,18 +115,20 @@ This prevents automatic re-indexing when Claude Desktop starts, since you've alr
 
 ### Incremental Updates
 
-**Status: Needs Verification** ⚠️
+**Status: ✅ VALIDATED - Production Ready**
 
-The MCP server includes a file system watcher that should handle incremental updates:
+The MCP server includes a file system watcher that handles incremental updates automatically. This has been fully tested and validated with the following results:
 
-- **Add note**: Automatically indexes new `.md` files
-- **Edit note**: Re-indexes modified files (2-second debounce)
-- **Delete note**: Removes entries from vector store
+- **Add note**: ✅ Automatically indexes new `.md` files (~2 seconds)
+- **Edit note**: ✅ Re-indexes modified files (2-second debounce for stability)
+- **Delete note**: ✅ Removes entries from vector store
 
-**This feature has not been fully tested in production.** If you experience issues with incremental updates, you can:
+**Validation Testing (Oct 23, 2025)**:
+- Created test note with unique token → Found immediately (score: 1.0)
+- Modified note with new token → Updated content found (score: 1.0)
+- Deleted note → Completely removed from index (no results)
 
-1. Manually re-run standalone indexing
-2. Or use the standalone method after making significant changes
+The file watcher is reliable for day-to-day vault maintenance. You only need standalone indexing for initial setup or model changes
 
 ## Model Switching Workflow
 

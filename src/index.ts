@@ -80,6 +80,9 @@ async function main() {
     if (config.vectorSearch?.enabled) {
       logInfo("Initializing vector search...");
       logInfo(`Provider: ${config.vectorSearch.provider}`);
+      logInfo(
+        `Model: ${config.vectorSearch.model || "Xenova/all-MiniLM-L6-v2 (default)"}`
+      );
 
       try {
         vectorStore = new VectorStore(config.vaultPath, {
