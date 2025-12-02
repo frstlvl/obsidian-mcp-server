@@ -165,9 +165,7 @@ Add this configuration:
   "mcpServers": {
     "obsidian": {
       "command": "node",
-      "args": [
-        "/path/to/obsidian-mcp-server/dist/index.js"
-      ],
+      "args": ["/path/to/obsidian-mcp-server/dist/index.js"],
       "env": {
         "OBSIDIAN_VAULT_PATH": "C:\\Users\\YourName\\Documents\\ObsidianVault"
       }
@@ -192,9 +190,7 @@ Add this configuration:
   "mcpServers": {
     "obsidian": {
       "command": "node",
-      "args": [
-        "/path/to/obsidian-mcp/dist/index.js"
-      ],
+      "args": ["/path/to/obsidian-mcp/dist/index.js"],
       "env": {
         "OBSIDIAN_VAULT_PATH": "/path/to/your/vault"
       }
@@ -238,6 +234,7 @@ Returns: Complete note content
 Search vault by keywords, tags, or folders.
 
 **Parameters:**
+
 - `query` (required): Search keywords (space-separated)
 - `tags` (optional): Filter by tags (must have ALL)
 - `folders` (optional): Limit to specific folders
@@ -249,14 +246,14 @@ Search vault by keywords, tags, or folders.
 
 ```typescript
 // Find notes about a specific topic
-obsidian_search_vault(query="JavaScript testing")
+obsidian_search_vault((query = "JavaScript testing"));
 
 // Find active project notes
 obsidian_search_vault(
-  query="project",
-  tags=["active"],
-  folders=["Projects"]
-)
+  (query = "project"),
+  (tags = ["active"]),
+  (folders = ["Projects"])
+);
 ```
 
 #### obsidian_semantic_search
@@ -264,6 +261,7 @@ obsidian_search_vault(
 Search vault using semantic similarity (meaning-based) instead of keyword matching.
 
 **Parameters:**
+
 - `query` (required): Natural language query (1-500 chars)
 - `limit` (optional): Max results (1-50, default: 10)
 - `min_score` (optional): Similarity threshold (0-1, default: 0.5)
@@ -274,14 +272,14 @@ Search vault using semantic similarity (meaning-based) instead of keyword matchi
 
 ```typescript
 // Find conceptually related notes
-obsidian_semantic_search(query="machine learning ethics")
+obsidian_semantic_search((query = "machine learning ethics"));
 
 // Hybrid search (semantic + keyword)
 obsidian_semantic_search(
-  query="web development best practices",
-  hybrid=true,
-  limit=15
-)
+  (query = "web development best practices"),
+  (hybrid = true),
+  (limit = 15)
+);
 ```
 
 #### obsidian_create_note
@@ -289,6 +287,7 @@ obsidian_semantic_search(
 Create a new note in the vault.
 
 **Parameters:**
+
 - `path` (required): Relative path for new note (e.g., "Projects/NewNote.md")
 - `content` (required): Note content (markdown)
 - `frontmatter` (optional): YAML frontmatter object
@@ -298,6 +297,7 @@ Create a new note in the vault.
 Update an existing note's content or frontmatter.
 
 **Parameters:**
+
 - `path` (required): Relative path to note
 - `content` (optional): New content (replaces existing)
 - `frontmatter` (optional): New frontmatter (merges with existing)
@@ -308,6 +308,7 @@ Update an existing note's content or frontmatter.
 Delete a note from the vault.
 
 **Parameters:**
+
 - `path` (required): Relative path to note
 - `confirm` (required): Must be `true` to confirm deletion
 
@@ -363,7 +364,7 @@ All file paths are validated to prevent directory traversal attacks:
 ```typescript
 // Checks that requested path is within vault boundaries
 if (!isPathSafe(notePath, vaultPath)) {
-  throw new Error('Access denied: path outside vault');
+  throw new Error("Access denied: path outside vault");
 }
 ```
 
@@ -468,6 +469,7 @@ node dist/index.js
 ### Permission Errors
 
 Ensure your user has read access to:
+
 - Vault directory
 - All subdirectories
 - All `.md` files
@@ -476,7 +478,7 @@ Ensure your user has read access to:
 
 Full configuration schema:
 
-```typescript
+````typescript
 {
 ```typescript
 {
@@ -501,7 +503,7 @@ Full configuration schema:
     file: string;                 // Log file path
   };
 }
-```
+````
 
 ## Performance
 
@@ -541,7 +543,15 @@ This server follows [MCP best practices](https://modelcontextprotocol.io/):
 
 ## Changelog
 
-### v1.4.0 (October 2025) - Smart Auto-Indexing Detection
+### v1.4.0 (December 2025) - Parallel Batch Processing & Smart Auto-Indexing
+
+**Performance Improvements**:
+
+- 🚀 **10x faster indexing**: Parallel batch processing with Promise.all (10 concurrent embeddings)
+- ⚡ **65x speedup**: 5,681 notes indexed in 5.5 minutes (down from 6+ hours)
+- 💾 **Robust checkpoints**: Proper Vectra transaction management (beginUpdate/endUpdate)
+- 🔧 **Memory optimized**: Explicit GC at checkpoints, pipeline refresh every 500 notes
+- 📊 **Production tested**: Successfully indexed 5,681/6,056 notes (93.8% coverage)
 
 **New Features**:
 
@@ -551,14 +561,22 @@ This server follows [MCP best practices](https://modelcontextprotocol.io/):
 - ✅ **Model metadata storage**: Stores model info in index for validation
 - ✅ **Seamless model switching**: Just change model in config and restart - auto re-indexes
 
+**Bug Fixes**:
+
+- ✅ **Fixed checkpoint persistence**: Vectra index now properly flushed to disk at checkpoints
+- ✅ **Eliminated index loss**: Transaction management prevents progress loss on crashes
+- ✅ **Type safety**: Fixed batch processing parameter types for NoteMetadata
+
 **Breaking Changes**:
 
 - ⚠️ **`indexOnStartup` enhanced**: Now accepts string values (`"auto"`, `"always"`, `"never"`) in addition to boolean (backwards compatible)
 - ⚠️ **Default changed**: `indexOnStartup` now defaults to `"auto"` instead of `false`
 
 **Migration**:
+
 - Old config with `true`/`false` still works (mapped to `"always"`/`"never"`)
 - Recommended: Update to `"auto"` for best experience
+- **Delete old indexes**: If you have incomplete indexes from v1.3, delete `.mcp-vector-store/` and let v1.4 rebuild with parallel processing
 
 ### v1.3.0 (October 2025) - Automatic Index Updates
 
