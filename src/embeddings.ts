@@ -196,7 +196,77 @@ export class VectorStore {
   }
 
   /**
-   * Index entire vault
+   * Process a batch of notes in parallel
+   */
+  private async processBatch(
+    batch: Array<{ title?: string; relativePath: string }>,
+    existingIndex: IndexMetadata,
+    forceReindex: boolean
+  ): Promise<{
+    results: Array<{
+      relativePath: string;
+      embedding: number[];
+      noteData: any;
+      fileStat: any;
+    } | null>;
+    skipped: number;
+    failed: number;
+  }> {
+    let skipped = 0;
+    let failed = 0;
+
+    const results = await Promise.all(
+      batch.map(async (note) => {
+        try {
+          const relativePath = note.relativePath;
+          const fullPath = path.join(this.vaultPath, relativePath);
+
+          // Skip if already indexed and not changed
+          if (!forceReindex && existingIndex[relativePath]) {
+            const entry = existingIndex[relativePath];
+            if (entry && "lastModified" in entry) {
+              const stat = await fs.stat(fullPath);
+              if (stat.mtimeMs === entry.lastModified) {
+                skipped++;
+                return null;
+              }
+            }
+          }
+
+          const noteData = await readNote(fullPath);
+          const embeddingText = this.prepareTextForEmbedding({
+            content: noteData.content,
+            frontmatter: noteData.frontmatter || {},
+          });
+
+          // Generate embedding with timeout
+          const embedding = await withTimeout(
+            this.generateEmbedding(embeddingText),
+            EMBEDDING_TIMEOUT_MS,
+            `Embedding generation timed out after ${EMBEDDING_TIMEOUT_MS}ms`
+          );
+
+          const fileStat = await fs.stat(fullPath);
+
+          return {
+            relativePath,
+            embedding,
+            noteData,
+            fileStat,
+          };
+        } catch (error) {
+          logError(`Failed to process ${note.relativePath}:`, error);
+          failed++;
+          return null;
+        }
+      })
+    );
+
+    return { results, skipped, failed };
+  }
+
+  /**
+   * Index entire vault with batch processing
    */
   async indexVault(forceReindex: boolean = false): Promise<{
     indexed: number;
@@ -208,121 +278,103 @@ export class VectorStore {
 
     const existingIndex = await this.loadIndexMetadata();
 
-    logInfo(`Starting indexing: ${notes.length} notes`);
+    logInfo(`Starting batch indexing: ${notes.length} notes`);
 
-    for (const note of notes) {
-      try {
-        const relativePath = note.relativePath;
-        const fullPath = path.join(this.vaultPath, relativePath);
+    // Begin Vectra transaction for batch updates
+    await this.index.beginUpdate();
 
-        logDebug(`Processing note: ${relativePath}`);
+    // Process notes in batches for parallel embedding generation
+    const BATCH_SIZE = 10; // Process 10 notes in parallel
+    const CHECKPOINT_INTERVAL = 50; // Save checkpoint every 50 notes
 
-        // Skip if already indexed and not changed
-        if (!forceReindex && existingIndex[relativePath]) {
-          const entry = existingIndex[relativePath];
-          if (entry && "lastModified" in entry) {
-            const stat = await fs.stat(fullPath);
-            if (stat.mtimeMs === entry.lastModified) {
-              stats.skipped++;
-              continue;
-            }
-          }
-        }
+    for (let i = 0; i < notes.length; i += BATCH_SIZE) {
+      const batch = notes.slice(i, i + BATCH_SIZE);
 
-        const noteData = await readNote(fullPath);
-        const embeddingText = this.prepareTextForEmbedding({
-          content: noteData.content,
-          frontmatter: noteData.frontmatter || {},
-        });
+      logDebug(
+        `Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(notes.length / BATCH_SIZE)} (notes ${i + 1}-${Math.min(i + BATCH_SIZE, notes.length)})`
+      );
 
-        logDebug(
-          `Generating embedding for: ${relativePath} (${embeddingText.length} chars)`
-        );
+      // Process batch in parallel
+      const { results, skipped, failed } = await this.processBatch(
+        batch,
+        existingIndex,
+        forceReindex
+      );
 
-        let embedding;
+      stats.skipped += skipped;
+      stats.failed += failed;
+
+      // Insert successfully processed notes into index
+      for (const result of results) {
+        if (!result) continue;
+
         try {
-          // Wrap embedding generation with timeout
-          embedding = await withTimeout(
-            this.generateEmbedding(embeddingText),
-            EMBEDDING_TIMEOUT_MS,
-            `Embedding generation timed out after ${EMBEDDING_TIMEOUT_MS}ms`
-          );
-          logDebug(`Successfully generated embedding for: ${relativePath}`);
+          const { relativePath, embedding, noteData, fileStat } = result;
 
-          // Small delay to let native code clean up (every 10 notes)
-          if (stats.indexed % 10 === 0) {
-            await new Promise((resolve) => setTimeout(resolve, 10));
-          }
-        } catch (embError) {
-          logError(
-            `Embedding generation failed for ${relativePath}:`,
-            embError
-          );
-          logWarn(`Skipping note due to embedding failure: ${relativePath}`);
-          stats.failed++;
-          continue; // Skip this note and continue with the next one
-        }
+          logDebug(`Inserting into index: ${relativePath}`);
 
-        logDebug(`Inserting into index: ${relativePath}`);
-        // Add to Vectra index using insertItem API
-        await this.index.insertItem({
-          id: relativePath,
-          vector: embedding,
-          metadata: {
-            title:
-              noteData.frontmatter?.title ||
-              note.title ||
-              path.basename(relativePath, ".md"),
-            path: relativePath,
-            tags: tagsToString(noteData.frontmatter?.tags),
+          // Add to Vectra index
+          await this.index.insertItem({
+            id: relativePath,
+            vector: embedding,
+            metadata: {
+              title:
+                noteData.frontmatter?.title ||
+                path.basename(relativePath, ".md"),
+              path: relativePath,
+              tags: tagsToString(noteData.frontmatter?.tags),
+              lastIndexed: Date.now(),
+              excerpt: noteData.content.substring(0, 1000),
+            },
+          });
+
+          // Update metadata
+          existingIndex[relativePath] = {
+            lastModified: fileStat.mtimeMs,
             lastIndexed: Date.now(),
-            excerpt: noteData.content.substring(0, 1000),
-          },
-        });
+          };
 
-        // Update metadata
-        const fileStat = await fs.stat(fullPath);
-        existingIndex[relativePath] = {
-          lastModified: fileStat.mtimeMs,
-          lastIndexed: Date.now(),
-        };
-
-        stats.indexed++;
-
-        if (stats.indexed % 10 === 0) {
-          logInfo(
-            `Indexed ${stats.indexed}/${notes.length} notes (${stats.failed} failed, ${stats.skipped} skipped)`
-          );
+          stats.indexed++;
+        } catch (error) {
+          logError(`Failed to insert ${result.relativePath}:`, error);
+          stats.failed++;
         }
-
-        // Periodically save progress and trigger garbage collection
-        if (stats.indexed % 50 === 0) {
-          logInfo(`Saving progress checkpoint at ${stats.indexed} notes...`);
-          await this.saveIndexMetadata(existingIndex);
-          // Force garbage collection if available
-          if (global.gc) {
-            logDebug("Running garbage collection...");
-            global.gc();
-          }
-        }
-
-        // Periodically dispose and recreate transformer pipeline to prevent memory leaks
-        if (stats.indexed % 500 === 0 && stats.indexed > 0) {
-          logInfo(
-            `Refreshing transformer pipeline at ${stats.indexed} notes to prevent memory buildup...`
-          );
-          await this.disposeTransformerPipeline();
-          // Give system time to fully clean up before recreating
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          logInfo("Pipeline disposed, will recreate on next embedding...");
-          // Pipeline will be recreated on next embedding generation
-        }
-      } catch (error) {
-        logError(`Failed to index ${note.relativePath}:`, error);
-        logWarn(`Skipping note due to unexpected error: ${note.relativePath}`);
-        stats.failed++;
-        // Continue processing other notes
       }
+
+      if (stats.indexed % 10 === 0) {
+        logInfo(
+          `Indexed ${stats.indexed}/${notes.length} notes (${stats.failed} failed, ${stats.skipped} skipped)`
+        );
+      }
+
+      // Periodically save progress and trigger garbage collection
+      if (stats.indexed > 0 && stats.indexed % CHECKPOINT_INTERVAL === 0) {
+        logInfo(`Saving progress checkpoint at ${stats.indexed} notes...`);
+        // End current transaction to persist to disk
+        await this.index.endUpdate();
+        await this.saveIndexMetadata(existingIndex);
+        // Begin new transaction for next batch
+        await this.index.beginUpdate();
+        // Force garbage collection if available
+        if (global.gc) {
+          logDebug("Running garbage collection...");
+          global.gc();
+        }
+      }
+
+      // Periodically dispose and recreate transformer pipeline to prevent memory leaks
+      if (stats.indexed > 0 && stats.indexed % 500 === 0) {
+        logInfo(
+          `Refreshing transformer pipeline at ${stats.indexed} notes to prevent memory buildup...`
+        );
+        await this.disposeTransformerPipeline();
+        // Give system time to fully clean up before recreating
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        logInfo("Pipeline disposed, will recreate on next embedding...");
+      }
+
+      // Small delay between batches to prevent overwhelming the system
+      await new Promise((resolve) => setTimeout(resolve, 50));
     }
 
     // Update metadata with model info
@@ -334,6 +386,8 @@ export class VectorStore {
       version: "1.4.0", // Update this with actual version
     };
 
+    // End Vectra transaction to persist final batch
+    await this.index.endUpdate();
     await this.saveIndexMetadata(existingIndex);
 
     logInfo(

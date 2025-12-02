@@ -153,9 +153,11 @@ export async function searchVault(
         }
 
         // Tag match (3 points)
-        const tagMatches = noteTags.filter((t) =>
-          t.toLowerCase().includes(term)
-        ).length;
+        const tagMatches = noteTags.filter((t) => {
+          // Ensure tag is a string before calling toLowerCase
+          const tagStr = typeof t === "string" ? t : String(t);
+          return tagStr.toLowerCase().includes(term);
+        }).length;
         if (tagMatches > 0) {
           score += tagMatches * 3;
         }
