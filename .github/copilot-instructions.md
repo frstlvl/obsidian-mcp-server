@@ -6,6 +6,18 @@ This is a **Model Context Protocol (MCP) server** that provides real-time Claude
 
 **Key Purpose**: Bridge Claude AI with Obsidian knowledge bases through efficient, secure, real-time vault access.
 
+## Issue Tracking
+
+This project uses **bd (beads)** for issue tracking.
+Run `bd prime` for workflow context.
+
+Quick reference:
+
+- `bd ready` - Find unblocked work
+- `bd create "Title" --description "Description" --type task --priority 2` - Create issue
+- `bd close <id>` - Complete work
+- `bd sync` - Sync with git
+
 ## Critical Project Context
 
 ### MCP Architecture (CRITICAL)
@@ -19,11 +31,13 @@ This is a **Model Context Protocol (MCP) server** that provides real-time Claude
 ### Technology Stack
 
 **Runtime & Build**:
+
 - Node.js 18+ (recommended 20+)
 - TypeScript 5.7+ with strict mode
 - ES Modules (type: "module" in package.json)
 
 **Core Dependencies**:
+
 - `@modelcontextprotocol/sdk` - MCP protocol implementation
 - `@xenova/transformers` - Local embedding generation (Transformers.js)
 - `vectra` - Local vector database for semantic search
@@ -33,6 +47,7 @@ This is a **Model Context Protocol (MCP) server** that provides real-time Claude
 - `zod` - Runtime type validation
 
 **Development**:
+
 - `tsx` - TypeScript execution and hot reload
 - `prettier` - Code formatting
 - `eslint` - Code linting
@@ -68,6 +83,7 @@ obsidian-mcp-server/
 ### Obsidian Vault Structure
 
 **File Format**:
+
 - Primary: Markdown files (.md extension)
 - Frontmatter: YAML metadata (optional) at file top
 - WikiLinks: `[[Note Name]]` for internal references
@@ -86,6 +102,7 @@ modified: 2025-10-23T10:30:00
 ```
 
 **Conventions**:
+
 - Folders can have any structure (user-defined hierarchy)
 - Special folders often prefixed with `.` or `_` (e.g., `.obsidian`, `_archive`)
 - File names can contain spaces and Unicode characters
@@ -101,26 +118,28 @@ modified: 2025-10-23T10:30:00
 server.setRequestHandler(ListResourcesRequestSchema, async () => {
   const notes = await findAllNotes(vaultPath);
   return {
-    resources: notes.map(note => ({
+    resources: notes.map((note) => ({
       uri: `obsidian://vault/${note.relativePath}`,
       name: note.name,
-      description: note.frontmatter?.description || '',
-      mimeType: 'text/markdown',
+      description: note.frontmatter?.description || "",
+      mimeType: "text/markdown",
     })),
   };
 });
 
 // Tool handler (search)
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  if (request.params.name === 'search_vault') {
+  if (request.params.name === "search_vault") {
     const { query, searchMode } = request.params.arguments;
     const results = await searchVault(vaultPath, query, searchMode);
-    
+
     return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify(results, null, 2),
-      }],
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(results, null, 2),
+        },
+      ],
     };
   }
 });
@@ -131,16 +150,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 **Windows/WSL Compatibility**:
 
 ```typescript
-import * as path from 'path';
-import * as fs from 'fs/promises';
+import * as path from "path";
+import * as fs from "fs/promises";
 
 // ALWAYS normalize paths
-const vaultPath = process.env.OBSIDIAN_VAULT_PATH || '';
+const vaultPath = process.env.OBSIDIAN_VAULT_PATH || "";
 const normalizedPath = path.resolve(vaultPath);
 
 // Handle both forward and backslashes
 const relativePath = path.relative(normalizedPath, filePath);
-const uriPath = relativePath.replace(/\\/g, '/');  // URIs always use forward slashes
+const uriPath = relativePath.replace(/\\/g, "/"); // URIs always use forward slashes
 
 // Safe path validation
 function isWithinVault(filePath: string, vaultPath: string): boolean {
@@ -155,16 +174,16 @@ function isWithinVault(filePath: string, vaultPath: string): boolean {
 // Preferred pattern: try-catch with meaningful errors
 async function processNote(notePath: string): Promise<NoteData> {
   try {
-    const content = await fs.readFile(notePath, 'utf-8');
+    const content = await fs.readFile(notePath, "utf-8");
     const { data: frontmatter, content: markdown } = matter(content);
-    
+
     return {
       path: notePath,
       frontmatter,
       content: markdown,
     };
   } catch (error) {
-    if (error.code === 'ENOENT') {
+    if (error.code === "ENOENT") {
       throw new Error(`Note not found: ${notePath}`);
     }
     throw new Error(`Failed to read note: ${error.message}`);
@@ -185,6 +204,7 @@ async function processNote(notePath: string): Promise<NoteData> {
 ### TypeScript Code Standards
 
 **Style**:
+
 - Strict mode enabled (all strict TypeScript checks)
 - Explicit return types for functions
 - Named exports preferred over default exports
@@ -192,12 +212,14 @@ async function processNote(notePath: string): Promise<NoteData> {
 - Use `async/await` over promise chains
 
 **Formatting**:
+
 - 2-space indentation
 - Double quotes for strings
 - Trailing commas in ES5-compatible structures
 - Line length: 80-120 characters (soft limit)
 
 **Error Handling**:
+
 - All async operations wrapped in try-catch
 - Meaningful error messages with context
 - Log errors with appropriate severity (logError, logWarn)
@@ -205,21 +227,25 @@ async function processNote(notePath: string): Promise<NoteData> {
 ### Obsidian-Specific Handling
 
 **Frontmatter**:
+
 - Parse with `gray-matter` library
 - Handle missing/invalid frontmatter gracefully
 - Common fields: title, aliases, tags, created, modified
 
 **WikiLinks**:
+
 - Pattern: `\[\[([^\]]+)\]\]`
 - Can include display text: `[[Target|Display]]`
 - Used for relationship mapping
 
 **Tags**:
+
 - Frontmatter tags: `tags: [tag1, tag2]` (array or string)
 - Inline tags: `#tag` or `#nested/tag`
 - Normalize for comparison (lowercase, trim)
 
 **Special Characters**:
+
 - Handle spaces in file names (URL encode for URIs)
 - Support Unicode in file names
 - Case sensitivity: Windows insensitive, Linux/macOS sensitive
@@ -229,15 +255,16 @@ async function processNote(notePath: string): Promise<NoteData> {
 **Log Levels**:
 
 ```typescript
-import { logInfo, logWarn, logError, logDebug } from './logger.js';
+import { logInfo, logWarn, logError, logDebug } from "./logger.js";
 
-logInfo('Normal operation message');        // General information
-logWarn('Non-critical issue occurred');     // Warning, but continues
-logError('Critical error happened', error); // Errors requiring attention
-logDebug('Detailed diagnostic info');       // Verbose debugging
+logInfo("Normal operation message"); // General information
+logWarn("Non-critical issue occurred"); // Warning, but continues
+logError("Critical error happened", error); // Errors requiring attention
+logDebug("Detailed diagnostic info"); // Verbose debugging
 ```
 
 **When to Log**:
+
 - Server startup/shutdown
 - Configuration loading
 - Index creation/updates
@@ -246,6 +273,7 @@ logDebug('Detailed diagnostic info');       // Verbose debugging
 - Errors and warnings
 
 **Log Format**:
+
 - Winston structured logging (JSON in file, formatted in console)
 - File: `logs/mcp-server.log`
 - Rotation: Daily, keep 14 days
@@ -255,6 +283,7 @@ logDebug('Detailed diagnostic info');       // Verbose debugging
 ### Markdown Formatting
 
 **Required**:
+
 - No trailing spaces (remove with regex: `\s+$`)
 - Single trailing newline at end of file
 - Blank lines before/after tables and code blocks
@@ -264,15 +293,17 @@ logDebug('Detailed diagnostic info');       // Verbose debugging
 
 ```markdown
 <!-- Correct -->
+
 \`\`\`typescript
 const example = 'code';
 \`\`\`
 
 <!-- For non-code content -->
+
 \`\`\`text
 folder/
-  subfolder/
-    file.txt
+subfolder/
+file.txt
 \`\`\`
 ```
 
@@ -297,12 +328,14 @@ folder/
 ### Documentation Structure
 
 **Headers**:
+
 - H1 (`#`): File title
 - H2 (`##`): Major sections
 - H3 (`###`): Subsections
 - H4 (`####`): Detailed subsections (use sparingly)
 
 **Code Examples**:
+
 - Include both Windows (PowerShell) and Linux/macOS (Bash) versions
 - Show complete, runnable examples
 - Include expected output when relevant
@@ -312,10 +345,12 @@ folder/
 ### Claude Desktop Configuration
 
 **Windows**:
+
 - Config file: `%APPDATA%\Claude\claude_desktop_config.json`
 - Full path: `C:\Users\[USERNAME]\AppData\Roaming\Claude\claude_desktop_config.json`
 
 **macOS**:
+
 - Config file: `~/Library/Application Support/Claude/claude_desktop_config.json`
 
 **Config Structure**:
@@ -340,6 +375,7 @@ folder/
 ```
 
 **Important Notes**:
+
 - Windows paths require double backslashes in JSON
 - Use absolute paths for reliability
 - Node.js memory flags recommended for large vaults
@@ -347,17 +383,20 @@ folder/
 ### Vector Search Architecture
 
 **Embedding Models** (Transformers.js):
+
 - `Xenova/all-MiniLM-L6-v2` - 384 dims, fast, good quality (default)
 - `Xenova/bge-base-en-v1.5` - 768 dims, best quality, slower
 - `Xenova/bge-small-en-v1.5` - 384 dims, balanced
 
 **Index Structure**:
+
 - Location: `[VAULT_PATH]/.mcp-vector-store/`
 - Format: Vectra LocalIndex
 - Metadata: `index-metadata.json` with model info
 - Checkpoints: Progress saved every 50 notes
 
 **Indexing Modes** (`indexOnStartup`):
+
 - `"always"` - Re-index on every startup (slow, use for testing)
 - `"auto"` - Auto-detect if indexing needed (model mismatch, missing index)
 - `false` - Never auto-index (recommended for production)
@@ -367,7 +406,7 @@ folder/
 **Implementation**:
 
 ```typescript
-import chokidar from 'chokidar';
+import chokidar from "chokidar";
 
 const watcher = chokidar.watch(vaultPath, {
   ignored: /(^|[\/\\])\../, // Ignore dotfiles
@@ -381,24 +420,25 @@ const watcher = chokidar.watch(vaultPath, {
 });
 
 watcher
-  .on('add', async (filePath) => {
-    if (filePath.endsWith('.md')) {
+  .on("add", async (filePath) => {
+    if (filePath.endsWith(".md")) {
       await vectorStore.indexNote(filePath);
     }
   })
-  .on('change', async (filePath) => {
-    if (filePath.endsWith('.md')) {
+  .on("change", async (filePath) => {
+    if (filePath.endsWith(".md")) {
       await vectorStore.updateNote(filePath);
     }
   })
-  .on('unlink', async (filePath) => {
-    if (filePath.endsWith('.md')) {
+  .on("unlink", async (filePath) => {
+    if (filePath.endsWith(".md")) {
       await vectorStore.removeNote(filePath);
     }
   });
 ```
 
 **Characteristics**:
+
 - Debounce: 2-second delay for stability
 - Auto-indexing: Creates/updates/deletes in real-time
 - Status: ✅ Validated production-ready (Oct 23, 2025)
@@ -408,6 +448,7 @@ watcher
 ### Memory Management
 
 **Large Vault Handling**:
+
 - Use `--expose-gc --max-old-space-size=16384` for indexing
 - Checkpoint system saves progress every 50 notes
 - Background worker for indexing to avoid blocking MCP server
@@ -424,17 +465,20 @@ if (global.gc && noteCount % 100 === 0) {
 ### Search Implementation
 
 **Hybrid Search** (combines keyword + semantic):
+
 1. Keyword search with TF-IDF scoring
 2. Semantic search with cosine similarity
 3. Merge results with weighted scoring
 4. Deduplicate and sort by relevance
 
 **Keyword Search**:
+
 - Tokenization with stop word removal
 - Case-insensitive matching
 - Frontmatter field boosting (title, aliases)
 
 **Vector Search**:
+
 - Generate query embedding
 - Cosine similarity against indexed notes
 - Configurable top-k results (default: 10)
@@ -442,11 +486,13 @@ if (global.gc && noteCount % 100 === 0) {
 ### Configuration System
 
 **Loading Priority**:
+
 1. Environment variable: `OBSIDIAN_CONFIG_PATH`
 2. Default location: `./config.json`
 3. Fallback: Built-in defaults
 
 **Config Validation**:
+
 - Zod schemas for runtime validation
 - Type-safe configuration objects
 - Meaningful error messages for invalid config
@@ -454,21 +500,25 @@ if (global.gc && noteCount % 100 === 0) {
 ## Common Pitfalls to Avoid
 
 **MCP Protocol**:
+
 - ❌ Don't use REST/HTTP - MCP is JSON-RPC over stdio
 - ❌ Don't assume synchronous operations - all I/O is async
 - ❌ Don't return raw objects - wrap in proper MCP response format
 
 **File Paths**:
+
 - ❌ Don't hardcode paths - use environment variables
 - ❌ Don't assume Unix paths - handle Windows backslashes
 - ❌ Don't skip path validation - always check paths are within vault
 
 **Vector Search**:
+
 - ❌ Don't load entire vault into memory - use streaming/batching
 - ❌ Don't skip error handling - embedding generation can fail
 - ❌ Don't ignore model mismatches - index must match model
 
 **Obsidian Specifics**:
+
 - ❌ Don't assume all files have frontmatter - handle missing gracefully
 - ❌ Don't ignore special characters - properly escape for URIs
 - ❌ Don't hardcode folder structures - user vaults vary widely
@@ -478,16 +528,19 @@ if (global.gc && noteCount % 100 === 0) {
 ### Manual Testing
 
 **MCP Server**:
+
 1. Run standalone: `node dist/index.js`
 2. Check logs: `logs/mcp-server.log`
 3. Verify initialization messages
 
 **Vector Search**:
+
 1. Create test note with unique token
 2. Search for token via Claude
 3. Verify result score and content
 
 **File Watcher**:
+
 1. CREATE: Add new note, search immediately
 2. MODIFY: Edit note, search for new content
 3. DELETE: Remove note, verify no results
@@ -507,6 +560,7 @@ Search for "UNIQUE-TOKEN-12345" in the vault
 ```
 
 **File Watcher Status**:
+
 - Check logs for "File system watcher started" message
 - Verify add/change/unlink events logged
 

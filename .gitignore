@@ -82,6 +82,9 @@ config.local.json
 config-test.json
 config-vector-test.json
 
+# Beads issue tracker (local cache only - .beads/ folder should be committed)
+beads.db
+
 # Vector store data
 .mcp-vector-store/
 
