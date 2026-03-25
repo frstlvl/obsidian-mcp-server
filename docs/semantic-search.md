@@ -73,12 +73,12 @@ Add the `vectorSearch` section to your `config.json`:
 
 ### Configuration Options
 
-| Option           | Type    | Default                     | Description                                                        |
-| ---------------- | ------- | --------------------------- | ------------------------------------------------------------------ |
-| `enabled`        | boolean | `false`                     | Enable/disable semantic search                                     |
-| `provider`       | string  | `"transformers"`            | Embedding provider (`"transformers"` or `"anthropic"`)             |
-| `model`          | string  | `"Xenova/bge-small-en-v1.5"` | Embedding model to use                                             |
-| `indexOnStartup` | string \| boolean | `"auto"`                      | When to index vault on startup ("auto", "always", "never", or boolean) |
+| Option           | Type              | Default                      | Description                                                            |
+| ---------------- | ----------------- | ---------------------------- | ---------------------------------------------------------------------- |
+| `enabled`        | boolean           | `false`                      | Enable/disable semantic search                                         |
+| `provider`       | string            | `"transformers"`             | Embedding provider (`"transformers"` or `"anthropic"`)                 |
+| `model`          | string            | `"Xenova/bge-small-en-v1.5"` | Embedding model to use                                                 |
+| `indexOnStartup` | string \| boolean | `"auto"`                     | When to index vault on startup ("auto", "always", "never", or boolean) |
 
 ### Supported Models
 

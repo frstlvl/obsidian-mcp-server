@@ -208,7 +208,11 @@ To access multiple Obsidian vaults, add a separate server entry for each vault:
   "mcpServers": {
     "obsidian-vault-1": {
       "command": "node",
-      "args": ["--expose-gc", "--max-old-space-size=16384", "/path/to/obsidian-mcp-server/dist/index.js"],
+      "args": [
+        "--expose-gc",
+        "--max-old-space-size=16384",
+        "/path/to/obsidian-mcp-server/dist/index.js"
+      ],
       "env": {
         "OBSIDIAN_VAULT_PATH": "/path/to/first-vault",
         "OBSIDIAN_CONFIG_PATH": "/path/to/obsidian-mcp-server/config.json"
@@ -216,7 +220,11 @@ To access multiple Obsidian vaults, add a separate server entry for each vault:
     },
     "obsidian-vault-2": {
       "command": "node",
-      "args": ["--expose-gc", "--max-old-space-size=16384", "/path/to/obsidian-mcp-server/dist/index.js"],
+      "args": [
+        "--expose-gc",
+        "--max-old-space-size=16384",
+        "/path/to/obsidian-mcp-server/dist/index.js"
+      ],
       "env": {
         "OBSIDIAN_VAULT_PATH": "/path/to/second-vault",
         "OBSIDIAN_CONFIG_PATH": "/path/to/obsidian-mcp-server/config.json"

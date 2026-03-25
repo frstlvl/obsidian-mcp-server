@@ -141,13 +141,13 @@ The embedding model that converts your notes into numerical vectors for semantic
 
 **Available Models**:
 
-| Model                                          | Dimensions | Speed          | Quality   | Best For                      |
-| ---------------------------------------------- | ---------- | -------------- | --------- | ----------------------------- |
+| Model                                          | Dimensions | Speed          | Quality   | Best For                                 |
+| ---------------------------------------------- | ---------- | -------------- | --------- | ---------------------------------------- |
 | `Xenova/bge-small-en-v1.5`                     | 384        | Fast (60ms)    | Excellent | **Default**, best quality/resource ratio |
-| `Xenova/all-MiniLM-L6-v2`                      | 384        | Fast (50ms)    | Good      | Lightweight alternative       |
-| `Xenova/all-mpnet-base-v2`                     | 768        | Medium (150ms) | Very Good | Higher quality, 2x storage    |
-| `Xenova/bge-base-en-v1.5`                      | 768        | Medium (150ms) | Excellent | State-of-the-art English      |
-| `Xenova/paraphrase-multilingual-MiniLM-L12-v2` | 384        | Slow (100ms)   | Good      | Multilingual vaults           |
+| `Xenova/all-MiniLM-L6-v2`                      | 384        | Fast (50ms)    | Good      | Lightweight alternative                  |
+| `Xenova/all-mpnet-base-v2`                     | 768        | Medium (150ms) | Very Good | Higher quality, 2x storage               |
+| `Xenova/bge-base-en-v1.5`                      | 768        | Medium (150ms) | Excellent | State-of-the-art English                 |
+| `Xenova/paraphrase-multilingual-MiniLM-L12-v2` | 384        | Slow (100ms)   | Good      | Multilingual vaults                      |
 
 **Choosing a Model**:
 
