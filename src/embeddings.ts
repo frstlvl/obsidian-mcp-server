@@ -556,6 +556,7 @@ export class VectorStore {
   async shouldReindex(): Promise<{
     reindex: boolean;
     reason: string;
+    force: boolean;
   }> {
     try {
       // Check if index directory exists
@@ -564,6 +565,7 @@ export class VectorStore {
         return {
           reindex: true,
           reason: "No existing index found (first-time setup)",
+          force: false,
         };
       }
 
@@ -575,6 +577,7 @@ export class VectorStore {
         return {
           reindex: true,
           reason: "Legacy index detected (no model metadata), upgrading",
+          force: true,
         };
       }
 
@@ -586,6 +589,7 @@ export class VectorStore {
         return {
           reindex: true,
           reason: `Model changed: ${storedModel} → ${currentModel}`,
+          force: true,
         };
       }
 
@@ -595,6 +599,7 @@ export class VectorStore {
         return {
           reindex: true,
           reason: "Index exists but is empty",
+          force: false,
         };
       }
 
@@ -602,11 +607,13 @@ export class VectorStore {
       return {
         reindex: false,
         reason: "Index valid and up-to-date",
+        force: false,
       };
     } catch (error) {
       return {
         reindex: true,
         reason: `Index validation failed: ${error instanceof Error ? error.message : "unknown error"}`,
+        force: true,
       };
     }
   }

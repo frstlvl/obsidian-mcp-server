@@ -134,8 +134,12 @@ async function main() {
     logInfo(`Model: ${config.model}`);
     logInfo(`Vector store: ${config.vectorStorePath}`);
 
+    // Check if force reindex is needed (e.g., model changed)
+    const decision = await vectorStore.shouldReindex();
+    logInfo(`Reindex decision: ${decision.reason} (force: ${decision.force})`);
+
     // Run indexing
-    const stats = await vectorStore.indexVault(false);
+    const stats = await vectorStore.indexVault(decision.force);
 
     logInfo("=== Indexing Complete ===");
     logInfo(`Indexed: ${stats.indexed}`);
