@@ -59,7 +59,7 @@ Add the `vectorSearch` section to your `config.json`:
   "vectorSearch": {
     "enabled": true,
     "provider": "transformers",
-    "model": "Xenova/all-MiniLM-L6-v2",
+    "model": "Xenova/bge-small-en-v1.5",
     "indexOnStartup": "auto"
   },
   "searchOptions": {
@@ -77,8 +77,8 @@ Add the `vectorSearch` section to your `config.json`:
 | ---------------- | ------- | --------------------------- | ------------------------------------------------------------------ |
 | `enabled`        | boolean | `false`                     | Enable/disable semantic search                                     |
 | `provider`       | string  | `"transformers"`            | Embedding provider (`"transformers"` or `"anthropic"`)             |
-| `model`          | string  | `"Xenova/all-MiniLM-L6-v2"` | Embedding model to use                                             |
-| `indexOnStartup` | boolean | `true`                      | Index vault on server startup (file watcher maintains index after) |
+| `model`          | string  | `"Xenova/bge-small-en-v1.5"` | Embedding model to use                                             |
+| `indexOnStartup` | string \| boolean | `"auto"`                      | When to index vault on startup ("auto", "always", "never", or boolean) |
 
 ### Supported Models
 
@@ -86,18 +86,7 @@ Add the `vectorSearch` section to your `config.json`:
 
 #### Recommended Models by Use Case
 
-**1. `Xenova/all-MiniLM-L6-v2` - Default Choice** ⭐
-
-- **Dimensions**: 384
-- **Model Size**: 23 MB
-- **Parameters**: 22M
-- **Speed**: ~50ms per note (Intel i5/AMD Ryzen 5 or better)
-- **Quality**: Good for general document similarity
-- **Index Time**: 4-5 minutes (5,000 notes)
-- **Storage**: ~2-3 KB per note (~20 MB for 5,000 notes)
-- **Best for**: Default users, proven reliability, good balance
-
-**2. `Xenova/bge-small-en-v1.5` - Best 384-Dimension Model** 🚀
+**1. `Xenova/bge-small-en-v1.5` - Default Choice** ⭐
 
 - **Dimensions**: 384
 - **Model Size**: 33 MB
@@ -106,7 +95,18 @@ Add the `vectorSearch` section to your `config.json`:
 - **Quality**: State-of-the-art at 384-dim (MTEB benchmark leader)
 - **Index Time**: 5-6 minutes (5,000 notes)
 - **Storage**: ~2-3 KB per note (~20 MB for 5,000 notes)
-- **Best for**: Users wanting best quality without storage overhead
+- **Best for**: Default choice, excellent quality-to-resource ratio, multi-vault setups
+
+**2. `Xenova/all-MiniLM-L6-v2` - Lightweight Alternative**
+
+- **Dimensions**: 384
+- **Model Size**: 23 MB
+- **Parameters**: 22M
+- **Speed**: ~50ms per note (Intel i5/AMD Ryzen 5 or better)
+- **Quality**: Good for general document similarity
+- **Index Time**: 4-5 minutes (5,000 notes)
+- **Storage**: ~2-3 KB per note (~20 MB for 5,000 notes)
+- **Best for**: Lightweight alternative, proven reliability
 
 **3. `Xenova/bge-base-en-v1.5` - Highest Quality** 🏆
 

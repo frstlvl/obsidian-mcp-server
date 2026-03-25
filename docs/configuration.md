@@ -69,8 +69,8 @@ If you want to customize behavior, create `config.json` in the repo root:
   "vectorSearch": {
     "enabled": true,
     "provider": "transformers",
-    "model": "Xenova/all-MiniLM-L6-v2",
-    "indexOnStartup": false
+    "model": "Xenova/bge-small-en-v1.5",
+    "indexOnStartup": "auto"
   },
   "searchOptions": {
     "maxResults": 20,
@@ -90,11 +90,13 @@ If you want to customize behavior, create `config.json` in the repo root:
 ### File Patterns
 
 **`includePatterns`** (array of strings)
+
 - Glob patterns for files to index
 - Default: `["**/*.md"]`
 - Example: `["**/*.md", "**/*.markdown"]`
 
 **`excludePatterns`** (array of strings)
+
 - Glob patterns for files to exclude
 - Default: `[".obsidian/**", ".trash/**", "node_modules/**"]`
 - Commonly excluded:
@@ -107,6 +109,7 @@ If you want to customize behavior, create `config.json` in the repo root:
 ### Write Operations
 
 **`enableWrite`** (boolean)
+
 - Enable create, update, and delete operations
 - Default: `false` (read-only mode)
 - Set to `true` to enable:
@@ -119,11 +122,13 @@ If you want to customize behavior, create `config.json` in the repo root:
 ### Vector Search
 
 **`vectorSearch.enabled`** (boolean)
+
 - Enable semantic search with embeddings
 - Default: `false`
 - Requires: Transformers.js and Vectra dependencies (auto-installed)
 
 **`vectorSearch.provider`** (string)
+
 - Embedding provider to use
 - Options: `"transformers"` (only option currently)
 - Default: `"transformers"`
@@ -132,23 +137,22 @@ If you want to customize behavior, create `config.json` in the repo root:
 
 The embedding model that converts your notes into numerical vectors for semantic search.
 
-**Default**: `"Xenova/all-MiniLM-L6-v2"` (384 dimensions)
+**Default**: `"Xenova/bge-small-en-v1.5"` (384 dimensions)
 
 **Available Models**:
 
 | Model                                          | Dimensions | Speed          | Quality   | Best For                      |
 | ---------------------------------------------- | ---------- | -------------- | --------- | ----------------------------- |
-| `Xenova/all-MiniLM-L6-v2`                      | 384        | Fast (50ms)    | Good      | Default, balanced performance |
-| `Xenova/bge-small-en-v1.5`                     | 384        | Fast (60ms)    | Excellent | Best quality at 384-dim       |
+| `Xenova/bge-small-en-v1.5`                     | 384        | Fast (60ms)    | Excellent | **Default**, best quality/resource ratio |
+| `Xenova/all-MiniLM-L6-v2`                      | 384        | Fast (50ms)    | Good      | Lightweight alternative       |
 | `Xenova/all-mpnet-base-v2`                     | 768        | Medium (150ms) | Very Good | Higher quality, 2x storage    |
 | `Xenova/bge-base-en-v1.5`                      | 768        | Medium (150ms) | Excellent | State-of-the-art English      |
 | `Xenova/paraphrase-multilingual-MiniLM-L12-v2` | 384        | Slow (100ms)   | Good      | Multilingual vaults           |
 
 **Choosing a Model**:
 
-- **Default users**: Stick with `all-MiniLM-L6-v2` (proven, fast, good quality)
+- **Default users**: Use `bge-small-en-v1.5` (excellent quality, efficient for multi-vault setups)
 - **High-end CPU (Ryzen 9, i9, M3+)**: Use `Xenova/bge-base-en-v1.5` for best quality
-- **Mid-range CPU**: Use `Xenova/bge-small-en-v1.5` for excellent quality without slowdown
 - **Multilingual vaults**: Use `paraphrase-multilingual-MiniLM-L12-v2`
 - **Limited storage**: Stick with 384-dim models (smaller index size)
 
@@ -183,6 +187,7 @@ Controls when the vault should be indexed on server startup.
 4. ✅ **Index valid** → Skips indexing (fast startup)
 
 **Benefits of "auto" mode**:
+
 - Zero manual configuration when changing models
 - Automatic recovery from corrupted indexes
 - Fast startups when index is valid
@@ -258,11 +263,13 @@ Whether to include YAML frontmatter fields in search results.
 ### Logging
 
 **`logging.level`** (string)
+
 - Log verbosity level
 - Options: `"error"`, `"warn"`, `"info"`, `"debug"`
 - Default: `"info"`
 
 **`logging.file`** (string)
+
 - Log file path (relative to repo root)
 - Default: `"logs/mcp-server.log"`
 - Creates directory if not exists
@@ -352,6 +359,7 @@ ls ~/obsidian-mcp-server/config.json
 **Problem**: Claude doesn't see `obsidian_semantic_search` tool
 
 **Checklist**:
+
 1. ✅ `vectorSearch.enabled: true` in config.json
 2. ✅ Config file loading successfully (check logs)
 3. ✅ No errors during server startup
@@ -369,6 +377,7 @@ ls ~/obsidian-mcp-server/config.json
 **Problem**: Claude can't create/update notes
 
 **Checklist**:
+
 1. ✅ `enableWrite: true` in config.json
 2. ✅ Vault path has write permissions
 3. ✅ Config file loading successfully
@@ -384,6 +393,7 @@ ls ~/obsidian-mcp-server/config.json
 **Problem**: Vault path not found or access denied
 
 **Solution**: Verify path exists and use correct format:
+
 - **Windows**: Use forward slashes or double backslashes in JSON
   - Example: `C:\\Users\\YourName\\Documents\\MyVault`
   - Claude Desktop config: `%APPDATA%\Claude\claude_desktop_config.json`

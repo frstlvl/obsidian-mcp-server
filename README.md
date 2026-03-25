@@ -97,7 +97,7 @@ Create `config.json` in the project root:
   "vectorSearch": {
     "enabled": true,
     "provider": "transformers",
-    "model": "Xenova/all-MiniLM-L6-v2",
+    "model": "Xenova/bge-small-en-v1.5",
     "indexOnStartup": "auto"
   },
   "searchOptions": {
@@ -115,10 +115,10 @@ Create `config.json` in the project root:
 
 **Choosing the Right Embedding Model:**
 
-The default model (`Xenova/all-MiniLM-L6-v2`) works well for most users. Consider upgrading based on your hardware:
+The default model (`Xenova/bge-small-en-v1.5`) offers excellent quality at 384 dimensions. Consider alternatives based on your needs:
 
-- **High-end CPU** (Ryzen 9+, i9+, M3 Max+): Use `Xenova/bge-base-en-v1.5` for best quality
-- **Mid-range CPU** (Ryzen 5-7, i5-i7, M2): Use `Xenova/bge-small-en-v1.5` for improved quality
+- **Default**: `Xenova/bge-small-en-v1.5` — best quality-to-resource ratio, recommended for multi-vault setups
+- **High-end CPU** (Ryzen 9+, i9+, M3 Max+): Use `Xenova/bge-base-en-v1.5` for best quality (768 dims, ~2x RAM)
 - **Multilingual vault**: Use `Xenova/paraphrase-multilingual-MiniLM-L12-v2`
 
 See [Semantic Search Guide](docs/semantic-search.md#hardware-specific-recommendations) for detailed model comparison.
@@ -198,6 +198,37 @@ Add this configuration:
   }
 }
 ```
+
+#### Multiple Vaults
+
+To access multiple Obsidian vaults, add a separate server entry for each vault:
+
+```json
+{
+  "mcpServers": {
+    "obsidian-vault-1": {
+      "command": "node",
+      "args": ["--expose-gc", "--max-old-space-size=16384", "/path/to/obsidian-mcp-server/dist/index.js"],
+      "env": {
+        "OBSIDIAN_VAULT_PATH": "/path/to/first-vault",
+        "OBSIDIAN_CONFIG_PATH": "/path/to/obsidian-mcp-server/config.json"
+      }
+    },
+    "obsidian-vault-2": {
+      "command": "node",
+      "args": ["--expose-gc", "--max-old-space-size=16384", "/path/to/obsidian-mcp-server/dist/index.js"],
+      "env": {
+        "OBSIDIAN_VAULT_PATH": "/path/to/second-vault",
+        "OBSIDIAN_CONFIG_PATH": "/path/to/obsidian-mcp-server/config.json"
+      }
+    }
+  }
+}
+```
+
+Each vault runs as a separate process with its own vector index (stored in each vault's `.mcp-vector-store/` folder). All vaults can share the same `config.json`.
+
+**Note**: Each process loads the embedding model independently (~150-300MB RAM per vault depending on model). Plan memory accordingly for multiple vaults.
 
 #### Restart Claude Desktop
 
@@ -489,7 +520,7 @@ Full configuration schema:
   vectorSearch?: {                // Optional vector search config
     enabled: boolean;             // Enable semantic search
     provider: "transformers";     // Embedding provider
-    model?: string;               // Model name (default: Xenova/all-MiniLM-L6-v2)
+    model?: string;               // Model name (default: Xenova/bge-small-en-v1.5)
     indexOnStartup: "auto" | "always" | "never" | boolean;  // Smart indexing (default: "auto")
   };
   searchOptions: {
@@ -598,7 +629,7 @@ This server follows [MCP best practices](https://modelcontextprotocol.io/):
 - ✅ **Write operations**: Create, update, and delete notes
 - ✅ **Hybrid search**: Combine semantic and keyword search (60/40 weighting)
 - ✅ **Incremental indexing**: Track file modifications for efficient updates
-- ✅ **Local embeddings**: Privacy-first with Xenova/all-MiniLM-L6-v2 model
+- ✅ **Local embeddings**: Privacy-first with local Transformers.js models
 
 **Bug Fixes**:
 

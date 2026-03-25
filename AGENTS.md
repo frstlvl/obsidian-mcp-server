@@ -386,9 +386,9 @@ file.txt
 
 **Embedding Models** (Transformers.js):
 
-- `Xenova/all-MiniLM-L6-v2` - 384 dims, fast, good quality (default)
+- `Xenova/bge-small-en-v1.5` - 384 dims, excellent quality (default)
+- `Xenova/all-MiniLM-L6-v2` - 384 dims, fast, good quality
 - `Xenova/bge-base-en-v1.5` - 768 dims, best quality, slower
-- `Xenova/bge-small-en-v1.5` - 384 dims, balanced
 
 **Index Structure**:
 
@@ -399,9 +399,9 @@ file.txt
 
 **Indexing Modes** (`indexOnStartup`):
 
+- `"auto"` - Auto-detect if indexing needed; model mismatch triggers force reindex (default, recommended)
 - `"always"` - Re-index on every startup (slow, use for testing)
-- `"auto"` - Auto-detect if indexing needed (model mismatch, missing index)
-- `false` - Never auto-index (recommended for production)
+- `false` - Never auto-index (manual control)
 
 ### File Watcher System
 
