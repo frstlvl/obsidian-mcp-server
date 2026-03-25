@@ -98,3 +98,7 @@ issues/
 # Project specific
 /net-commander
 
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
