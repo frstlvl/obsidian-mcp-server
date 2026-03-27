@@ -23,19 +23,33 @@ const __dirname = path.dirname(__filename);
 // Character limit for MCP responses (25k tokens ≈ 100k characters, being conservative)
 export const CHARACTER_LIMIT = 25000;
 
+// Vector search configuration (shared between server-level defaults and per-vault overrides)
+export interface VectorSearchConfig {
+  enabled: boolean;
+  provider: "transformers" | "anthropic";
+  model?: string;
+  anthropicApiKey?: string;
+  indexOnStartup?: boolean | "auto" | "always" | "never";
+}
+
+// Per-vault configuration
+export interface VaultConfig {
+  name: string; // Unique identifier used in tool params
+  path: string; // Absolute path to vault root
+  enableWrite: boolean;
+  includePatterns?: string[]; // Per-vault override (inherits server default)
+  excludePatterns?: string[]; // Per-vault override (inherits server default)
+  vectorSearch?: Partial<VectorSearchConfig>; // Per-vault override (inherits server default)
+}
+
 // Configuration interface
 export interface Config {
-  vaultPath: string;
+  vaultPath: string; // Legacy: single vault path (auto-migrates to vaults[])
+  vaults: VaultConfig[]; // Multi-vault configuration
   includePatterns: string[];
   excludePatterns: string[];
   enableWrite: boolean;
-  vectorSearch?: {
-    enabled: boolean;
-    provider: "transformers" | "anthropic";
-    model?: string;
-    anthropicApiKey?: string;
-    indexOnStartup?: boolean | "auto" | "always" | "never";
-  };
+  vectorSearch?: VectorSearchConfig;
   searchOptions: {
     maxResults: number;
     excerptLength: number;
@@ -45,6 +59,41 @@ export interface Config {
   logging: {
     level: string;
     file: string;
+  };
+}
+
+// Resolved vault config with all defaults applied
+export interface ResolvedVaultConfig {
+  name: string;
+  path: string;
+  enableWrite: boolean;
+  includePatterns: string[];
+  excludePatterns: string[];
+  vectorSearch: VectorSearchConfig;
+}
+
+/**
+ * Resolve a VaultConfig by merging per-vault overrides with server-level defaults
+ */
+export function resolveVaultConfig(
+  vault: VaultConfig,
+  config: Config
+): ResolvedVaultConfig {
+  const defaultVectorSearch: VectorSearchConfig = config.vectorSearch ?? {
+    enabled: false,
+    provider: "transformers",
+  };
+
+  return {
+    name: vault.name,
+    path: vault.path,
+    enableWrite: vault.enableWrite ?? config.enableWrite ?? false,
+    includePatterns: vault.includePatterns ?? config.includePatterns,
+    excludePatterns: vault.excludePatterns ?? config.excludePatterns,
+    vectorSearch: {
+      ...defaultVectorSearch,
+      ...vault.vectorSearch,
+    },
   };
 }
 
@@ -67,40 +116,93 @@ export interface NoteContent {
  * Load configuration from file or environment
  *
  * Priority order:
- * 1. Environment variable OBSIDIAN_VAULT_PATH
- * 2. Config file at ../_data/config.json
+ * 1. Config file at ./config.json (relative to repo root)
+ * 2. Environment variable OBSIDIAN_VAULT_PATH (legacy single-vault)
  * 3. Default configuration
+ *
+ * Multi-vault: If config has a `vaults` array, use it directly.
+ * Legacy migration: If config has `vaultPath` but no `vaults`, auto-migrate
+ * to a single-entry `vaults` array with name derived from folder name.
  */
 export async function loadConfig(): Promise<Config> {
-  // Environment variable takes precedence
+  // Environment variable takes precedence for vault path
   const vaultPathEnv = process.env.OBSIDIAN_VAULT_PATH;
 
   // Try to load config file from the repo root (parent of dist/)
   // When compiled, this will be in dist/, so go up one level
   const repoRoot = path.join(__dirname, "..");
-  const configPath = path.join(repoRoot, "config.json");
+  const configPath = process.env.OBSIDIAN_CONFIG_PATH || path.join(repoRoot, "config.json");
 
-  let config: Config | null = null;
+  let rawConfig: any = null;
 
   try {
     const configFile = await fs.readFile(configPath, "utf-8");
-    config = JSON.parse(configFile);
+    rawConfig = JSON.parse(configFile);
   } catch (error) {
     // Config file not found or invalid, will use defaults
-    config = null;
+    rawConfig = null;
   }
 
-  if (config) {
-    // Override vault path with env var if present
+  if (rawConfig) {
+    const config = rawConfig as Config;
+
+    // Override vault path with env var if present (legacy behavior)
     if (vaultPathEnv) {
       logInfo("Using vault path from OBSIDIAN_VAULT_PATH environment variable");
       config.vaultPath = vaultPathEnv;
     }
 
-    // Validate vault path exists
-    await validateVaultPath(config.vaultPath);
+    // Apply defaults for missing fields
+    config.includePatterns = config.includePatterns ?? ["**/*.md"];
+    config.excludePatterns = config.excludePatterns ?? [
+      "_archive/**",
+      ".obsidian/**",
+      ".trash/**",
+      "node_modules/**",
+      "**/node_modules/**",
+    ];
+    config.enableWrite = config.enableWrite ?? false;
+    config.searchOptions = config.searchOptions ?? {
+      maxResults: 20,
+      excerptLength: 200,
+      caseSensitive: false,
+      includeMetadata: true,
+    };
+    config.logging = config.logging ?? {
+      level: "info",
+      file: "_data/mcp-server.log",
+    };
+
+    // Multi-vault migration: if no vaults array, create one from legacy vaultPath
+    if (!config.vaults || config.vaults.length === 0) {
+      if (!config.vaultPath) {
+        throw new Error(
+          "No vault configured. Add a 'vaults' array to config.json or set OBSIDIAN_VAULT_PATH environment variable."
+        );
+      }
+
+      const vaultName = deriveVaultName(config.vaultPath);
+      logInfo(
+        `Legacy config detected: auto-migrating vaultPath to vaults array with name "${vaultName}"`
+      );
+
+      config.vaults = [
+        {
+          name: vaultName,
+          path: config.vaultPath,
+          enableWrite: config.enableWrite,
+        },
+      ];
+    }
+
+    // Validate vaults
+    await validateVaults(config.vaults);
+
+    // Set vaultPath to first vault for backward compatibility
+    config.vaultPath = config.vaults[0].path;
 
     logInfo(`Configuration loaded from: ${configPath}`);
+    logInfo(`Configured vaults: ${config.vaults.map((v) => v.name).join(", ")}`);
     return config;
   }
 
@@ -119,9 +221,18 @@ export async function loadConfig(): Promise<Config> {
   // Validate vault path
   await validateVaultPath(vaultPath);
 
-  // Return default config
+  const vaultName = deriveVaultName(vaultPath);
+
+  // Return default config with auto-migrated vault
   const defaultConfig: Config = {
     vaultPath: vaultPath,
+    vaults: [
+      {
+        name: vaultName,
+        path: vaultPath,
+        enableWrite: false,
+      },
+    ],
     includePatterns: ["**/*.md"],
     excludePatterns: [
       "_archive/**",
@@ -143,8 +254,48 @@ export async function loadConfig(): Promise<Config> {
     },
   };
 
-  logInfo("Using default configuration");
+  logInfo(`Using default configuration with vault "${vaultName}"`);
   return defaultConfig;
+}
+
+/**
+ * Derive a vault name from its filesystem path
+ *
+ * Uses the last path segment, lowercased, with spaces replaced by hyphens.
+ * e.g., "X:\Obsidian Vaults\Managed Knowledge" -> "managed-knowledge"
+ */
+function deriveVaultName(vaultPath: string): string {
+  const basename = path.basename(vaultPath);
+  return basename.toLowerCase().replace(/\s+/g, "-");
+}
+
+/**
+ * Validate all configured vaults
+ *
+ * Checks:
+ * - Names are unique
+ * - Names are valid identifiers (alphanumeric, hyphens, underscores)
+ * - Paths exist and are accessible directories
+ */
+async function validateVaults(vaults: VaultConfig[]): Promise<void> {
+  // Check for unique names
+  const names = vaults.map((v) => v.name);
+  const duplicates = names.filter((n, i) => names.indexOf(n) !== i);
+  if (duplicates.length > 0) {
+    throw new Error(
+      `Duplicate vault names: ${[...new Set(duplicates)].join(", ")}. Each vault must have a unique name.`
+    );
+  }
+
+  // Validate each vault name and path
+  for (const vault of vaults) {
+    if (!/^[a-zA-Z0-9_-]+$/.test(vault.name)) {
+      throw new Error(
+        `Invalid vault name: "${vault.name}". Use only letters, numbers, hyphens, and underscores.`
+      );
+    }
+    await validateVaultPath(vault.path);
+  }
 }
 
 /**
@@ -276,7 +427,9 @@ export function isPathSafe(requestedPath: string, vaultPath: string): boolean {
   const normalized = path.resolve(vaultPath, requestedPath);
   const normalizedVaultPath = path.resolve(vaultPath);
 
-  const isSafe = normalized.startsWith(normalizedVaultPath);
+  const isSafe =
+    normalized === normalizedVaultPath ||
+    normalized.startsWith(normalizedVaultPath + path.sep);
 
   if (!isSafe) {
     logWarn(`Path traversal attempt blocked: ${requestedPath}`);

@@ -18,8 +18,10 @@ import { z } from "zod";
 import type { Config } from "./utils.js";
 import { searchVault, SearchOptions, SearchResult } from "./search.js";
 import { createNote, updateNote, deleteNote } from "./utils.js";
-import { VectorStore } from "./embeddings.js";
+import { VaultRegistry, VaultContext } from "./vault-registry.js";
 import { logInfo, logError } from "./logger.js";
+import * as fs from "fs/promises";
+import * as path from "path";
 
 // Response format enum
 enum ResponseFormat {
@@ -27,9 +29,30 @@ enum ResponseFormat {
   JSON = "json",
 }
 
+// Common vault parameter for read tools (accepts "*" for cross-vault)
+const vaultReadParam = z
+  .string()
+  .min(1, "Vault name must not be empty")
+  .describe(
+    'Required: Name of the vault to search. Use a specific vault name, or "*" to search all vaults. Call obsidian_list_vaults to see available vault names.'
+  );
+
+// Common vault parameter for write tools (rejects "*")
+const vaultWriteParam = z
+  .string()
+  .min(1, "Vault name must not be empty")
+  .refine((v) => v !== "*", {
+    message:
+      'Write operations require a specific vault name, not "*". Call obsidian_list_vaults to see available vault names.',
+  })
+  .describe(
+    "Required: Name of the vault to write to. Must be a specific vault name (not \"*\"). Call obsidian_list_vaults to see available vault names."
+  );
+
 // Zod schemas for tool input validation
 const SearchVaultInputSchema = z
   .object({
+    vault: vaultReadParam,
     query: z
       .string()
       .min(1, "Query must not be empty")
@@ -77,6 +100,7 @@ type SearchVaultInput = z.infer<typeof SearchVaultInputSchema>;
 // Zod schema for semantic search (vector search)
 const SemanticSearchInputSchema = z
   .object({
+    vault: vaultReadParam,
     query: z
       .string()
       .min(1, "Query must not be empty")
@@ -120,6 +144,7 @@ type SemanticSearchInput = z.infer<typeof SemanticSearchInputSchema>;
 // Zod schemas for write operations (Phase 2)
 const CreateNoteInputSchema = z
   .object({
+    vault: vaultWriteParam,
     path: z
       .string()
       .min(1, "Path must not be empty")
@@ -152,6 +177,7 @@ type CreateNoteInput = z.infer<typeof CreateNoteInputSchema>;
 
 const UpdateNoteInputSchema = z
   .object({
+    vault: vaultWriteParam,
     path: z
       .string()
       .min(1, "Path must not be empty")
@@ -188,6 +214,7 @@ type UpdateNoteInput = z.infer<typeof UpdateNoteInputSchema>;
 
 const DeleteNoteInputSchema = z
   .object({
+    vault: vaultWriteParam,
     path: z
       .string()
       .min(1, "Path must not be empty")
@@ -217,7 +244,7 @@ type DeleteNoteInput = z.infer<typeof DeleteNoteInputSchema>;
 export function setupObsidianHandlers(
   server: McpServer,
   config: Config,
-  vectorStore?: VectorStore
+  registry: VaultRegistry
 ) {
   // =====================================================================
   // RESOURCE HANDLERS
@@ -232,6 +259,112 @@ export function setupObsidianHandlers(
    */
 
   logInfo("Obsidian handlers configured successfully");
+
+  // =====================================================================
+  // LIST VAULTS TOOL
+  // =====================================================================
+
+  /**
+   * Tool: obsidian_list_vaults
+   *
+   * List all configured vaults with metadata.
+   */
+  server.registerTool(
+    "obsidian_list_vaults",
+    {
+      title: "List Obsidian Vaults",
+      description: `List all configured Obsidian vaults with metadata.
+
+Returns information about each vault including:
+- name: Vault identifier (use this in other tool calls)
+- path: Filesystem path
+- readOnly: Whether write operations are disabled
+- lastIndexedAt: When the semantic index was last updated (null if no index)
+- model: Embedding model used for semantic search (null if no index)
+- indexedNoteCount: Number of notes in the semantic index (null if no index)
+- indexHealth: "healthy" | "stale" | "missing" | "model-mismatch"
+
+Use this tool first to discover available vaults before calling other tools.`,
+      inputSchema: {},
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async () => {
+      logInfo("Executing tool: obsidian_list_vaults");
+
+      const vaultInfos = [];
+
+      for (const ctx of registry.getAllVaults()) {
+        const info: Record<string, any> = {
+          name: ctx.config.name,
+          path: ctx.config.path,
+          readOnly: !ctx.config.enableWrite,
+          lastIndexedAt: null,
+          model: null,
+          indexedNoteCount: null,
+          indexHealth: "missing" as string,
+        };
+
+        // Try to read index metadata
+        if (ctx.config.vectorSearch.enabled) {
+          const metadataPath = path.join(
+            ctx.config.path,
+            ".mcp-vector-store",
+            "index-metadata.json"
+          );
+
+          try {
+            const raw = await fs.readFile(metadataPath, "utf-8");
+            const metadata = JSON.parse(raw);
+            const meta = metadata.__meta__;
+
+            if (meta) {
+              info.lastIndexedAt = meta.lastIndexedAt
+                ? new Date(meta.lastIndexedAt).toISOString()
+                : null;
+              info.model = meta.model || null;
+
+              // Count indexed notes (keys minus __meta__)
+              const noteKeys = Object.keys(metadata).filter(
+                (k) => k !== "__meta__"
+              );
+              info.indexedNoteCount = noteKeys.length;
+
+              // Determine health
+              const configModel =
+                ctx.config.vectorSearch.model || "Xenova/all-MiniLM-L6-v2";
+              if (meta.model && meta.model !== configModel) {
+                info.indexHealth = "model-mismatch";
+              } else if (meta.lastIndexedAt) {
+                const ageMs = Date.now() - meta.lastIndexedAt;
+                const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+                info.indexHealth =
+                  ageMs > sevenDaysMs ? "stale" : "healthy";
+              }
+            }
+          } catch {
+            // No metadata file — index is missing
+            info.indexHealth = "missing";
+          }
+        }
+
+        vaultInfos.push(info);
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ vaults: vaultInfos }, null, 2),
+          },
+        ],
+      };
+    }
+  );
 
   // =====================================================================
   // TOOL HANDLERS
@@ -314,36 +447,67 @@ Error Handling:
     async (params: SearchVaultInput) => {
       logInfo(`Executing tool: obsidian_search_vault`);
       logInfo(
-        `Query: "${params.query}", Limit: ${params.limit}, Format: ${params.response_format}`
+        `Query: "${params.query}", Vault: "${params.vault}", Limit: ${params.limit}, Format: ${params.response_format}`
       );
 
       try {
-        // Execute search
-        const searchOptions: SearchOptions = {
-          tags: params.tags,
-          folders: params.folders,
-          limit: params.limit,
-          offset: params.offset,
-          includePatterns: config.includePatterns,
-          excludePatterns: config.excludePatterns,
-          excerptLength: config.searchOptions.excerptLength,
-        };
+        const vaultCtx = registry.resolveVault(params.vault);
 
-        const results = await searchVault(
-          config.vaultPath,
-          params.query,
-          searchOptions
-        );
+        // Determine which vaults to search
+        const vaultsToSearch: VaultContext[] = vaultCtx
+          ? [vaultCtx]
+          : registry.getAllVaults();
 
-        logInfo(`Search returned ${results.length} results`);
+        // Search across target vaults
+        let allResults: (SearchResult & { vault?: string })[] = [];
+
+        for (const ctx of vaultsToSearch) {
+          const searchOptions: SearchOptions = {
+            tags: params.tags,
+            folders: params.folders,
+            limit: params.limit,
+            offset: 0, // Always start at 0 per vault; global offset applied after merge
+            includePatterns: ctx.config.includePatterns,
+            excludePatterns: ctx.config.excludePatterns,
+            excerptLength: config.searchOptions.excerptLength,
+          };
+
+          const results = await searchVault(
+            ctx.config.path,
+            params.query,
+            searchOptions
+          );
+
+          // Tag results with vault name and update URI
+          for (const r of results) {
+            (r as any).vault = ctx.config.name;
+            r.uri = `obsidian://vault/${ctx.config.name}/${r.path}`;
+          }
+
+          allResults.push(...(results as any[]));
+        }
+
+        // Sort by score descending (interleave cross-vault results)
+        allResults.sort((a, b) => b.score - a.score);
+
+        // Apply global offset and limit
+        const globalOffset = params.offset || 0;
+        if (globalOffset > 0) {
+          allResults = allResults.slice(globalOffset);
+        }
+        if (allResults.length > params.limit) {
+          allResults = allResults.slice(0, params.limit);
+        }
+
+        logInfo(`Search returned ${allResults.length} results`);
 
         // Handle empty results
-        if (results.length === 0) {
+        if (allResults.length === 0) {
           return {
             content: [
               {
                 type: "text",
-                text: `No notes found matching '${params.query}'${params.tags ? ` with tags [${params.tags.join(", ")}]` : ""}${params.folders ? ` in folders [${params.folders.join(", ")}]` : ""}`,
+                text: `No notes found matching '${params.query}'${params.tags ? ` with tags [${params.tags.join(", ")}]` : ""}${params.folders ? ` in folders [${params.folders.join(", ")}]` : ""} in vault "${params.vault}"`,
               },
             ],
           };
@@ -355,19 +519,19 @@ Error Handling:
         if (params.response_format === ResponseFormat.MARKDOWN) {
           responseText = formatSearchResultsMarkdown(
             params.query,
-            results,
+            allResults,
             params.offset || 0
           );
         } else {
-          responseText = formatSearchResultsJSON(results, params.offset || 0);
+          responseText = formatSearchResultsJSON(allResults, params.offset || 0);
         }
 
         // Check character limit and truncate if needed
         const CHARACTER_LIMIT = 25000;
         if (responseText.length > CHARACTER_LIMIT) {
-          const truncatedResults = results.slice(
+          const truncatedResults = allResults.slice(
             0,
-            Math.max(1, Math.floor(results.length / 2))
+            Math.max(1, Math.floor(allResults.length / 2))
           );
 
           if (params.response_format === ResponseFormat.MARKDOWN) {
@@ -384,12 +548,12 @@ Error Handling:
           }
 
           const truncationMessage =
-            `\n\n⚠️ Response truncated from ${results.length} to ${truncatedResults.length} results due to character limit. ` +
+            `\n\n⚠️ Response truncated from ${allResults.length} to ${truncatedResults.length} results due to character limit. ` +
             `Use 'limit' parameter (e.g., limit=10), add 'tags' or 'folders' filters, or use 'offset' for pagination to see more results.`;
 
           responseText += truncationMessage;
           logInfo(
-            `Response truncated: ${results.length} -> ${truncatedResults.length} results`
+            `Response truncated: ${allResults.length} -> ${truncatedResults.length} results`
           );
         }
 
@@ -465,19 +629,15 @@ Example:
     },
     async (params: CreateNoteInput) => {
       logInfo(`Executing tool: obsidian_create_note`);
-      logInfo(`Path: "${params.path}"`);
+      logInfo(`Path: "${params.path}", Vault: "${params.vault}"`);
 
       try {
-        // Check if write operations are enabled
-        if (!config.enableWrite) {
-          throw new Error(
-            "Write operations are disabled. Set enableWrite: true in configuration to allow note creation."
-          );
-        }
+        // Resolve vault (validates name, rejects "*", checks enableWrite)
+        const ctx = registry.resolveWriteVault(params.vault);
 
         // Create the note
-        const absolutePath = await createNote(
-          config.vaultPath,
+        await createNote(
+          ctx.config.path,
           params.path,
           params.content,
           params.frontmatter
@@ -487,7 +647,7 @@ Example:
         const relativePath = params.path.endsWith(".md")
           ? params.path
           : `${params.path}.md`;
-        const uri = `obsidian://vault/${relativePath}`;
+        const uri = `obsidian://vault/${ctx.config.name}/${relativePath}`;
 
         let responseText: string;
         if (params.response_format === ResponseFormat.JSON) {
@@ -495,9 +655,9 @@ Example:
             {
               success: true,
               message: "Note created successfully",
+              vault: ctx.config.name,
               path: relativePath,
               uri: uri,
-              absolutePath: absolutePath,
             },
             null,
             2
@@ -505,9 +665,9 @@ Example:
         } else {
           responseText = `# ✅ Note Created Successfully
 
+**Vault**: ${ctx.config.name}
 **Path**: \`${relativePath}\`
 **URI**: \`${uri}\`
-**Absolute Path**: \`${absolutePath}\`
 
 You can now read this note using the URI above or search for it by name.`;
         }
@@ -582,19 +742,15 @@ Example:
     },
     async (params: UpdateNoteInput) => {
       logInfo(`Executing tool: obsidian_update_note`);
-      logInfo(`Path: "${params.path}"`);
+      logInfo(`Path: "${params.path}", Vault: "${params.vault}"`);
 
       try {
-        // Check if write operations are enabled
-        if (!config.enableWrite) {
-          throw new Error(
-            "Write operations are disabled. Set enableWrite: true in configuration to allow note updates."
-          );
-        }
+        // Resolve vault (validates name, rejects "*", checks enableWrite)
+        const ctx = registry.resolveWriteVault(params.vault);
 
         // Update the note
-        const absolutePath = await updateNote(
-          config.vaultPath,
+        await updateNote(
+          ctx.config.path,
           params.path,
           params.content,
           params.frontmatter,
@@ -605,7 +761,7 @@ Example:
         const relativePath = params.path.endsWith(".md")
           ? params.path
           : `${params.path}.md`;
-        const uri = `obsidian://vault/${relativePath}`;
+        const uri = `obsidian://vault/${ctx.config.name}/${relativePath}`;
 
         let responseText: string;
         if (params.response_format === ResponseFormat.JSON) {
@@ -613,9 +769,9 @@ Example:
             {
               success: true,
               message: "Note updated successfully",
+              vault: ctx.config.name,
               path: relativePath,
               uri: uri,
-              absolutePath: absolutePath,
               frontmatter_merged: params.merge_frontmatter,
             },
             null,
@@ -624,9 +780,9 @@ Example:
         } else {
           responseText = `# ✅ Note Updated Successfully
 
+**Vault**: ${ctx.config.name}
 **Path**: \`${relativePath}\`
 **URI**: \`${uri}\`
-**Absolute Path**: \`${absolutePath}\`
 **Frontmatter**: ${params.merge_frontmatter ? "Merged with existing" : "Replaced completely"}
 
 The note has been updated with the new content.`;
@@ -699,15 +855,11 @@ Example:
     },
     async (params: DeleteNoteInput) => {
       logInfo(`Executing tool: obsidian_delete_note`);
-      logInfo(`Path: "${params.path}"`);
+      logInfo(`Path: "${params.path}", Vault: "${params.vault}"`);
 
       try {
-        // Check if write operations are enabled
-        if (!config.enableWrite) {
-          throw new Error(
-            "Write operations are disabled. Set enableWrite: true in configuration to allow note deletion."
-          );
-        }
+        // Resolve vault (validates name, rejects "*", checks enableWrite)
+        const ctx = registry.resolveWriteVault(params.vault);
 
         // Require explicit confirmation
         if (!params.confirm) {
@@ -717,7 +869,7 @@ Example:
         }
 
         // Delete the note
-        const absolutePath = await deleteNote(config.vaultPath, params.path);
+        await deleteNote(ctx.config.path, params.path);
 
         // Build response
         const relativePath = params.path.endsWith(".md")
@@ -730,8 +882,8 @@ Example:
             {
               success: true,
               message: "Note deleted successfully",
+              vault: ctx.config.name,
               path: relativePath,
-              absolutePath: absolutePath,
             },
             null,
             2
@@ -739,8 +891,8 @@ Example:
         } else {
           responseText = `# ✅ Note Deleted Successfully
 
+**Vault**: ${ctx.config.name}
 **Path**: \`${relativePath}\`
-**Absolute Path**: \`${absolutePath}\`
 
 ⚠️ The note has been permanently deleted. This action cannot be undone through the MCP server.`;
         }
@@ -769,10 +921,15 @@ Example:
   );
 
   // =====================================================================
-  // SEMANTIC SEARCH TOOL (Optional - requires vector store)
+  // SEMANTIC SEARCH TOOL
   // =====================================================================
 
-  if (vectorStore) {
+  // Register semantic search if any vault has vector search enabled
+  const hasAnyVectorSearch = registry
+    .getAllVaults()
+    .some((ctx) => ctx.vectorStore);
+
+  if (hasAnyVectorSearch) {
     server.registerTool(
       "obsidian_semantic_search",
       {
@@ -789,6 +946,7 @@ even if they don't contain the exact keywords. It's ideal for:
 The semantic search can optionally be combined with keyword search (hybrid mode) for best results.
 
 Args:
+  - vault (string): Vault name to search, or "*" for all vaults with semantic indexes
   - query (string): Natural language query (1-500 chars). Describe what you're looking for conceptually.
   - limit (number, optional): Max results (1-50, default: 10)
   - min_score (number, optional): Min similarity threshold (0-1, default: 0.5)
@@ -798,12 +956,7 @@ Args:
 Returns:
   Similar structure to obsidian_search_vault, but with similarity scores instead of keyword scores.
 
-Examples:
-  - "What are my thoughts on machine learning ethics?" (semantic)
-  - "Notes about project management best practices" (semantic)
-  - "Ideas related to consciousness and AI" (semantic)
-
-Note: Requires vector store to be initialized. First-time use may take a few moments.`,
+Note: Requires vector store to be initialized for the target vault. Call obsidian_list_vaults to check index health.`,
         inputSchema: SemanticSearchInputSchema.shape,
         annotations: {
           readOnlyHint: true,
@@ -815,53 +968,120 @@ Note: Requires vector store to be initialized. First-time use may take a few mom
       async (params: SemanticSearchInput) => {
         logInfo(`Executing tool: obsidian_semantic_search`);
         logInfo(
-          `Query: "${params.query}", Limit: ${params.limit}, Hybrid: ${params.hybrid}`
+          `Query: "${params.query}", Vault: "${params.vault}", Limit: ${params.limit}, Hybrid: ${params.hybrid}`
         );
 
         try {
-          let results;
+          const vaultCtx = registry.resolveVault(params.vault);
 
-          if (params.hybrid) {
-            // Hybrid search: combine semantic + keyword
-            const keywordResults = await searchVault(
-              config.vaultPath,
-              params.query,
-              {
-                limit: params.limit,
-                includePatterns: config.includePatterns,
-                excludePatterns: config.excludePatterns,
-                excerptLength: config.searchOptions.excerptLength,
-              }
-            );
-
-            // Convert keyword results to format expected by hybrid search
-            const kwResults = keywordResults.map((r) => ({
-              path: r.path,
-              score: r.score / 100, // Normalize to 0-1
-              excerpt: r.excerpt,
-            }));
-
-            results = await vectorStore.hybridSearch(params.query, kwResults, {
-              limit: params.limit,
-              minScore: params.min_score,
-            });
-          } else {
-            // Pure semantic search
-            results = await vectorStore.search(params.query, {
-              limit: params.limit,
-              minScore: params.min_score,
-            });
-          }
-
-          logInfo(`Semantic search returned ${results.length} results`);
-
-          // Handle empty results
-          if (results.length === 0) {
+          // For single vault, verify vector store is available
+          if (vaultCtx && !vaultCtx.vectorStore) {
             return {
               content: [
                 {
                   type: "text",
-                  text: `No notes found matching '${params.query}' with min_score ${params.min_score}. Try lowering min_score or rephrasing your query.`,
+                  text: `Semantic search is not enabled for vault "${params.vault}". Check vault configuration and index health with obsidian_list_vaults.`,
+                },
+              ],
+            };
+          }
+
+          // Determine which vaults to search
+          const vaultsToSearch: VaultContext[] = vaultCtx
+            ? [vaultCtx]
+            : registry.getAllVaults().filter((ctx) => ctx.vectorStore);
+
+          if (vaultsToSearch.length === 0) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: "No vaults with semantic search enabled. Check vault configuration and index health with obsidian_list_vaults.",
+                },
+              ],
+            };
+          }
+
+          // Search across target vaults
+          type SemanticResult = {
+            title: string;
+            path: string;
+            score: number;
+            excerpt: string;
+            metadata: Record<string, any>;
+            vault?: string;
+          };
+
+          let allResults: SemanticResult[] = [];
+
+          for (const ctx of vaultsToSearch) {
+            if (!ctx.vectorStore) {
+              logInfo(
+                `Skipping vault "${ctx.config.name}" - no vector store`
+              );
+              continue;
+            }
+
+            let results;
+
+            if (params.hybrid) {
+              const keywordResults = await searchVault(
+                ctx.config.path,
+                params.query,
+                {
+                  limit: params.limit,
+                  includePatterns: ctx.config.includePatterns,
+                  excludePatterns: ctx.config.excludePatterns,
+                  excerptLength: config.searchOptions.excerptLength,
+                }
+              );
+
+              const kwResults = keywordResults.map((r) => ({
+                path: r.path,
+                score: r.score / 100,
+                excerpt: r.excerpt,
+              }));
+
+              results = await ctx.vectorStore.hybridSearch(
+                params.query,
+                kwResults,
+                {
+                  limit: params.limit,
+                  minScore: params.min_score,
+                }
+              );
+            } else {
+              results = await ctx.vectorStore.search(params.query, {
+                limit: params.limit,
+                minScore: params.min_score,
+              });
+            }
+
+            // Tag results with vault name
+            for (const r of results) {
+              (r as SemanticResult).vault = ctx.config.name;
+            }
+
+            allResults.push(...(results as SemanticResult[]));
+          }
+
+          // Sort by score descending
+          allResults.sort((a, b) => b.score - a.score);
+
+          // Apply limit
+          if (allResults.length > params.limit) {
+            allResults = allResults.slice(0, params.limit);
+          }
+
+          logInfo(`Semantic search returned ${allResults.length} results`);
+
+          // Handle empty results
+          if (allResults.length === 0) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `No notes found matching '${params.query}' with min_score ${params.min_score} in vault "${params.vault}". Try lowering min_score or rephrasing your query.`,
                 },
               ],
             };
@@ -873,12 +1093,12 @@ Note: Requires vector store to be initialized. First-time use may take a few mom
           if (params.response_format === ResponseFormat.MARKDOWN) {
             responseText = formatSemanticResultsMarkdown(
               params.query,
-              results,
+              allResults,
               params.hybrid || false
             );
           } else {
             responseText = formatSemanticResultsJSON(
-              results,
+              allResults,
               params.hybrid || false
             );
           }
@@ -886,9 +1106,9 @@ Note: Requires vector store to be initialized. First-time use may take a few mom
           // Check character limit
           const CHARACTER_LIMIT = 25000;
           if (responseText.length > CHARACTER_LIMIT) {
-            const truncatedResults = results.slice(
+            const truncatedResults = allResults.slice(
               0,
-              Math.max(1, Math.floor(results.length / 2))
+              Math.max(1, Math.floor(allResults.length / 2))
             );
 
             if (params.response_format === ResponseFormat.MARKDOWN) {
@@ -905,7 +1125,7 @@ Note: Requires vector store to be initialized. First-time use may take a few mom
             }
 
             responseText +=
-              `\n\n⚠️ Response truncated from ${results.length} to ${truncatedResults.length} results. ` +
+              `\n\n⚠️ Response truncated from ${allResults.length} to ${truncatedResults.length} results. ` +
               `Use lower 'limit' parameter or higher 'min_score' to see more focused results.`;
           }
 
@@ -935,7 +1155,7 @@ Note: Requires vector store to be initialized. First-time use may take a few mom
     logInfo("Semantic search tool registered successfully");
   }
 
-  logInfo("Obsidian handlers configured successfully");
+  logInfo("All Obsidian handlers configured successfully");
 }
 
 /**
@@ -943,7 +1163,7 @@ Note: Requires vector store to be initialized. First-time use may take a few mom
  */
 function formatSearchResultsMarkdown(
   query: string,
-  results: SearchResult[],
+  results: (SearchResult & { vault?: string })[],
   offset: number
 ): string {
   const lines: string[] = [
@@ -955,6 +1175,9 @@ function formatSearchResultsMarkdown(
 
   for (const result of results) {
     lines.push(`## 📄 ${result.title}`);
+    if (result.vault) {
+      lines.push(`**Vault**: ${result.vault}`);
+    }
     lines.push(`**Path**: \`${result.path}\``);
     lines.push(`**Score**: ${result.score.toFixed(1)}`);
 
@@ -975,7 +1198,7 @@ function formatSearchResultsMarkdown(
  * Format search results as JSON (machine-readable)
  */
 function formatSearchResultsJSON(
-  results: SearchResult[],
+  results: (SearchResult & { vault?: string })[],
   offset: number
 ): string {
   const response = {
@@ -984,13 +1207,14 @@ function formatSearchResultsJSON(
     offset: offset,
     results: results.map((r) => ({
       title: r.title,
+      vault: r.vault,
       path: r.path,
       excerpt: r.excerpt,
       score: r.score,
       tags: r.tags || [],
       uri: r.uri,
     })),
-    has_more: false, // We don't know total count without doing full search
+    has_more: false,
     truncated: false,
   };
 
@@ -1008,6 +1232,7 @@ function formatSemanticResultsMarkdown(
     score: number;
     excerpt: string;
     metadata: Record<string, any>;
+    vault?: string;
   }>,
   hybrid: boolean
 ): string {
@@ -1020,6 +1245,9 @@ function formatSemanticResultsMarkdown(
 
   for (const result of results) {
     lines.push(`## 🔍 ${result.title}`);
+    if (result.vault) {
+      lines.push(`**Vault**: ${result.vault}`);
+    }
     lines.push(`**Path**: \`${result.path}\``);
     lines.push(`**Similarity**: ${(result.score * 100).toFixed(1)}%`);
 
@@ -1030,7 +1258,8 @@ function formatSemanticResultsMarkdown(
       }
     }
 
-    lines.push(`**URI**: \`obsidian://vault/${result.path}\``);
+    const uriVault = result.vault ? `${result.vault}/` : "";
+    lines.push(`**URI**: \`obsidian://vault/${uriVault}${result.path}\``);
     lines.push("");
     lines.push(`> ${result.excerpt}`);
     lines.push("");
@@ -1055,6 +1284,7 @@ function formatSemanticResultsJSON(
     score: number;
     excerpt: string;
     metadata: Record<string, any>;
+    vault?: string;
   }>,
   hybrid: boolean
 ): string {
@@ -1062,14 +1292,18 @@ function formatSemanticResultsJSON(
     total: results.length,
     count: results.length,
     search_type: hybrid ? "hybrid" : "semantic",
-    results: results.map((r) => ({
-      title: r.title,
-      path: r.path,
-      excerpt: r.excerpt,
-      similarity_score: r.score,
-      metadata: r.metadata,
-      uri: `obsidian://vault/${r.path}`,
-    })),
+    results: results.map((r) => {
+      const uriVault = r.vault ? `${r.vault}/` : "";
+      return {
+        title: r.title,
+        vault: r.vault,
+        path: r.path,
+        excerpt: r.excerpt,
+        similarity_score: r.score,
+        metadata: r.metadata,
+        uri: `obsidian://vault/${uriVault}${r.path}`,
+      };
+    }),
     truncated: false,
   };
 
