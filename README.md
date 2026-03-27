@@ -8,11 +8,13 @@ This MCP server enables Claude to query, search, and read notes from Obsidian va
 
 ## Features
 
+- **Multi-Vault Support**: Serve multiple Obsidian vaults from a single MCP server instance (v2.0)
 - **Real-time Vault Access**: Query and read notes dynamically without pre-uploading
 - **Automatic Index Updates**: File system watcher automatically updates vector index when notes change (v1.3.0)
 - **Vector Search**: Semantic search using local embeddings (Transformers.js) or Anthropic API
 - **Hybrid Search**: Combines keyword and semantic search for optimal results
 - **Write Operations**: Create, update, and delete notes programmatically
+- **Cross-Vault Search**: Search across all configured vaults with `vault: "*"`
 - **Search Tools**: Keyword, tag, and folder-based filtering
 - **Multiple Formats**: JSON and Markdown response formats
 - **Secure**: Path validation and security checks prevent unauthorized access
@@ -63,37 +65,22 @@ ls dist/index.js  # Should exist
 
 ### Configuration
 
-#### Option 1: Environment Variable (Recommended)
-
-**Windows (PowerShell):**
-
-```powershell
-# Set vault path (replace with your vault location)
-$env:OBSIDIAN_VAULT_PATH = "C:\Users\YourName\Documents\ObsidianVault"
-
-# Test server
-node dist\index.js
-```
-
-**macOS/Linux (Bash):**
-
-```bash
-# Set vault path (replace with your vault location)
-export OBSIDIAN_VAULT_PATH="/Users/YourName/Documents/ObsidianVault"
-
-# Test server
-node dist/index.js
-```
-
-#### Option 2: Configuration File
-
-Create `config.json` in the project root:
+Create `config.json` in the project root with your vault(s):
 
 ```json
 {
-  "includePatterns": ["**/*.md"],
-  "excludePatterns": [".obsidian/**", ".trash/**", "node_modules/**"],
-  "enableWrite": true,
+  "vaults": [
+    {
+      "name": "work",
+      "path": "C:\\Users\\YourName\\Documents\\WorkVault",
+      "enableWrite": true
+    },
+    {
+      "name": "personal",
+      "path": "C:\\Users\\YourName\\Documents\\PersonalVault",
+      "enableWrite": false
+    }
+  ],
   "vectorSearch": {
     "enabled": true,
     "provider": "transformers",
@@ -165,9 +152,13 @@ Add this configuration:
   "mcpServers": {
     "obsidian": {
       "command": "node",
-      "args": ["/path/to/obsidian-mcp-server/dist/index.js"],
+      "args": [
+        "--expose-gc",
+        "--max-old-space-size=16384",
+        "/path/to/obsidian-mcp-server/dist/index.js"
+      ],
       "env": {
-        "OBSIDIAN_VAULT_PATH": "C:\\Users\\YourName\\Documents\\ObsidianVault"
+        "OBSIDIAN_CONFIG_PATH": "/path/to/obsidian-mcp-server/config.json"
       }
     }
   }
@@ -190,53 +181,51 @@ Add this configuration:
   "mcpServers": {
     "obsidian": {
       "command": "node",
-      "args": ["/path/to/obsidian-mcp/dist/index.js"],
+      "args": [
+        "--expose-gc",
+        "--max-old-space-size=16384",
+        "/path/to/obsidian-mcp/dist/index.js"
+      ],
       "env": {
-        "OBSIDIAN_VAULT_PATH": "/path/to/your/vault"
+        "OBSIDIAN_CONFIG_PATH": "/path/to/obsidian-mcp-server/config.json"
       }
     }
   }
 }
 ```
 
-#### Multiple Vaults
+#### Multi-Vault Setup
 
-To access multiple Obsidian vaults, add a separate server entry for each vault:
+The server natively supports multiple vaults via the `vaults` array in `config.json`. All vaults are served by a single MCP server process — no need for separate server entries per vault.
+
+Each vault gets its own independent vector index (stored in each vault's `.mcp-vector-store/` folder) and file watcher. Use the `vault` parameter on all tools to target a specific vault, or `"*"` on read tools to search across all vaults.
 
 ```json
 {
-  "mcpServers": {
-    "obsidian-vault-1": {
-      "command": "node",
-      "args": [
-        "--expose-gc",
-        "--max-old-space-size=16384",
-        "/path/to/obsidian-mcp-server/dist/index.js"
-      ],
-      "env": {
-        "OBSIDIAN_VAULT_PATH": "/path/to/first-vault",
-        "OBSIDIAN_CONFIG_PATH": "/path/to/obsidian-mcp-server/config.json"
-      }
+  "vaults": [
+    {
+      "name": "work",
+      "path": "C:\\Users\\YourName\\Documents\\WorkVault",
+      "enableWrite": true
     },
-    "obsidian-vault-2": {
-      "command": "node",
-      "args": [
-        "--expose-gc",
-        "--max-old-space-size=16384",
-        "/path/to/obsidian-mcp-server/dist/index.js"
-      ],
-      "env": {
-        "OBSIDIAN_VAULT_PATH": "/path/to/second-vault",
-        "OBSIDIAN_CONFIG_PATH": "/path/to/obsidian-mcp-server/config.json"
-      }
+    {
+      "name": "personal",
+      "path": "C:\\Users\\YourName\\Documents\\PersonalVault",
+      "enableWrite": false
     }
+  ],
+  "vectorSearch": {
+    "enabled": true,
+    "provider": "transformers",
+    "model": "Xenova/bge-small-en-v1.5",
+    "indexOnStartup": "auto"
   }
 }
 ```
 
-Each vault runs as a separate process with its own vector index (stored in each vault's `.mcp-vector-store/` folder). All vaults can share the same `config.json`.
+**Memory planning**: Each vault loads the embedding model independently (~150-300MB RAM per vault depending on model). Plan memory accordingly.
 
-**Note**: Each process loads the embedding model independently (~150-300MB RAM per vault depending on model). Plan memory accordingly for multiple vaults.
+> **Legacy Note:** If you previously used `OBSIDIAN_VAULT_PATH` with one server process per vault, the server auto-migrates this to a single-vault `vaults` array at startup. The old multi-process approach still works but is no longer recommended.
 
 #### Restart Claude Desktop
 
@@ -268,12 +257,23 @@ Returns: Complete note content
 
 ### Available Tools
 
+All tools require a `vault` parameter specifying which vault to operate on. Use the vault name from your `config.json`. Read tools also accept `"*"` for cross-vault search.
+
+#### obsidian_list_vaults
+
+List all configured vaults with their status and metadata.
+
+**Parameters**: None required.
+
+**Returns**: Vault names, paths, write status, and index health (note count, model, indexed date).
+
 #### obsidian_search_vault
 
 Search vault by keywords, tags, or folders.
 
 **Parameters:**
 
+- `vault` (required): Vault name or `"*"` for all vaults
 - `query` (required): Search keywords (space-separated)
 - `tags` (optional): Filter by tags (must have ALL)
 - `folders` (optional): Limit to specific folders
@@ -284,15 +284,11 @@ Search vault by keywords, tags, or folders.
 **Examples:**
 
 ```typescript
-// Find notes about a specific topic
-obsidian_search_vault((query = "JavaScript testing"));
+// Search a specific vault
+obsidian_search_vault(vault="work", query="JavaScript testing")
 
-// Find active project notes
-obsidian_search_vault(
-  (query = "project"),
-  (tags = ["active"]),
-  (folders = ["Projects"])
-);
+// Search across all vaults
+obsidian_search_vault(vault="*", query="project", tags=["active"])
 ```
 
 #### obsidian_semantic_search
@@ -301,6 +297,7 @@ Search vault using semantic similarity (meaning-based) instead of keyword matchi
 
 **Parameters:**
 
+- `vault` (required): Vault name or `"*"` for all vaults
 - `query` (required): Natural language query (1-500 chars)
 - `limit` (optional): Max results (1-50, default: 10)
 - `min_score` (optional): Similarity threshold (0-1, default: 0.5)
@@ -310,23 +307,20 @@ Search vault using semantic similarity (meaning-based) instead of keyword matchi
 **Examples:**
 
 ```typescript
-// Find conceptually related notes
-obsidian_semantic_search((query = "machine learning ethics"));
+// Semantic search in one vault
+obsidian_semantic_search(vault="work", query="machine learning ethics")
 
-// Hybrid search (semantic + keyword)
-obsidian_semantic_search(
-  (query = "web development best practices"),
-  (hybrid = true),
-  (limit = 15)
-);
+// Cross-vault hybrid search
+obsidian_semantic_search(vault="*", query="web development best practices", hybrid=true)
 ```
 
 #### obsidian_create_note
 
-Create a new note in the vault.
+Create a new note in a specific vault. Write must be enabled for the target vault.
 
 **Parameters:**
 
+- `vault` (required): Vault name (no `"*"`)
 - `path` (required): Relative path for new note (e.g., "Projects/NewNote.md")
 - `content` (required): Note content (markdown)
 - `frontmatter` (optional): YAML frontmatter object
@@ -337,6 +331,7 @@ Update an existing note's content or frontmatter.
 
 **Parameters:**
 
+- `vault` (required): Vault name (no `"*"`)
 - `path` (required): Relative path to note
 - `content` (optional): New content (replaces existing)
 - `frontmatter` (optional): New frontmatter (merges with existing)
@@ -344,10 +339,11 @@ Update an existing note's content or frontmatter.
 
 #### obsidian_delete_note
 
-Delete a note from the vault.
+Delete a note from a specific vault. Write must be enabled for the target vault.
 
 **Parameters:**
 
+- `vault` (required): Vault name (no `"*"`)
 - `path` (required): Relative path to note
 - `confirm` (required): Must be `true` to confirm deletion
 
@@ -356,7 +352,7 @@ Delete a note from the vault.
 Every note in your vault is exposed as a resource with URI:
 
 ```text
-obsidian://vault/[relative-path]
+obsidian://vault/{vaultName}/[relative-path]
 ```
 
 Claude can list all available notes and read specific notes by URI.
@@ -380,18 +376,24 @@ Claude discovers notes through search, receives `obsidian://vault/` URIs, and ca
 graph LR
     A[Claude AI] -->|MCP Protocol| B[MCP Server]
     B -->|stdio| A
-    B --> C[Vault Manager]
-    C --> D[Search Engine]
-    C --> E[File Reader]
-    D --> F[Obsidian Vault]
-    E --> F
+    B --> C[Vault Registry]
+    C --> D1[Vault: work]
+    C --> D2[Vault: personal]
+    D1 --> E1[Search Engine]
+    D1 --> F1[Vector Store]
+    D1 --> G1[File Watcher]
+    D2 --> E2[Search Engine]
+    D2 --> F2[Vector Store]
+    D2 --> G2[File Watcher]
 ```
 
 ### Components
 
-- **index.ts** - Server initialization and transport setup
-- **obsidian-server.ts** - MCP request handlers (resources, tools)
+- **index.ts** - Server initialization, multi-vault setup, and transport
+- **obsidian-server.ts** - MCP request handlers (resources, tools) with vault routing
+- **vault-registry.ts** - Multi-vault context management and resolution
 - **search.ts** - Search engine with scoring and filtering
+- **embeddings.ts** - Vector store and embedding generation
 - **utils.ts** - Configuration, file operations, security
 
 ## Security
@@ -517,32 +519,37 @@ Ensure your user has read access to:
 
 Full configuration schema:
 
-````typescript
-{
 ```typescript
 {
-  // Note: vaultPath is set via OBSIDIAN_VAULT_PATH env variable
-  includePatterns: string[];      // Glob patterns to include
-  excludePatterns: string[];      // Glob patterns to exclude
-  enableWrite: boolean;           // Enable write operations
-  vectorSearch?: {                // Optional vector search config
-    enabled: boolean;             // Enable semantic search
-    provider: "transformers";     // Embedding provider
-    model?: string;               // Model name (default: Xenova/bge-small-en-v1.5)
-    indexOnStartup: "auto" | "always" | "never" | boolean;  // Smart indexing (default: "auto")
+  vaults: Array<{                   // Vault definitions (required)
+    name: string;                   // Unique vault identifier
+    path: string;                   // Absolute path to vault
+    enableWrite?: boolean;          // Per-vault write override
+    includePatterns?: string[];     // Per-vault include override
+    excludePatterns?: string[];     // Per-vault exclude override
+    vectorSearch?: { ... };         // Per-vault vector config override
+  }>;
+  includePatterns: string[];        // Default glob patterns to include
+  excludePatterns: string[];        // Default glob patterns to exclude
+  enableWrite: boolean;             // Default write permission (default: false)
+  vectorSearch?: {                  // Default vector search config
+    enabled: boolean;               // Enable semantic search
+    provider: "transformers";       // Embedding provider
+    model?: string;                 // Model name (default: Xenova/bge-small-en-v1.5)
+    indexOnStartup: "auto" | "always" | "never" | boolean;
   };
   searchOptions: {
-    maxResults: number;           // Max search results (default: 20)
-    excerptLength: number;        // Excerpt length (default: 200)
-    caseSensitive: boolean;       // Case-sensitive search (default: false)
-    includeMetadata: boolean;     // Include frontmatter (default: true)
+    maxResults: number;             // Max search results (default: 20)
+    excerptLength: number;          // Excerpt length (default: 200)
+    caseSensitive: boolean;         // Case-sensitive search (default: false)
+    includeMetadata: boolean;       // Include frontmatter (default: true)
   };
   logging: {
-    level: string;                // Log level (default: "info")
-    file: string;                 // Log file path
+    level: string;                  // Log level (default: "info")
+    file: string;                   // Log file path
   };
 }
-````
+```
 
 ## Performance
 
@@ -581,6 +588,36 @@ This server follows [MCP best practices](https://modelcontextprotocol.io/):
 - ✅ Search-tool pattern for large datasets
 
 ## Changelog
+
+### v2.0.0 (January 2025) - Multi-Vault Support
+
+**New Features**:
+
+- ✅ **Multi-vault support**: Serve multiple Obsidian vaults from a single MCP server instance
+- ✅ **`obsidian_list_vaults` tool**: List all configured vaults with index health and metadata
+- ✅ **`vault` parameter**: All tools require a `vault` parameter for explicit targeting
+- ✅ **Cross-vault search**: Use `vault: "*"` on read tools to search across all vaults
+- ✅ **Per-vault config**: Override write permissions, include/exclude patterns, and vector search settings per vault
+- ✅ **Per-vault file watchers**: Independent file watching and auto-indexing per vault
+- ✅ **Updated URI scheme**: `obsidian://vault/{vaultName}/{path}` includes vault context
+
+**Configuration**:
+
+- ✅ **`vaults` array**: Define multiple vaults in `config.json`
+- ✅ **Legacy migration**: `OBSIDIAN_VAULT_PATH` env var auto-migrates to single-vault `vaults` array
+- ✅ **Per-vault overrides**: enableWrite, includePatterns, excludePatterns, vectorSearch inherit from server defaults
+
+**Breaking Changes**:
+
+- ⚠️ **`vault` parameter required**: All tools now require a `vault` parameter
+- ⚠️ **URI scheme changed**: URIs now include vault name: `obsidian://vault/{vaultName}/{path}`
+- ⚠️ **Config format**: `vaults` array is the recommended config format (legacy auto-migration preserves backward compatibility)
+
+**Migration**:
+
+- Existing configs with `OBSIDIAN_VAULT_PATH` continue to work via auto-migration
+- Update tool calls to include `vault` parameter
+- Update any URI parsing to handle the new `{vaultName}` segment
 
 ### v1.4.0 (December 2025) - Parallel Batch Processing & Smart Auto-Indexing
 

@@ -25,7 +25,8 @@ Quick reference:
 - **Protocol**: JSON-RPC 2.0 over stdio (stdin/stdout), NOT REST/HTTP
 - **Server Model**: Long-running process with structured message communication
 - **Resources**: Vault notes exposed as `obsidian://vault/[path]` URIs
-- **Tools**: Functions callable by Claude (search_vault, create_note, read_note, etc.)
+- **Tools**: Functions callable by Claude (list_vaults, search_vault, create_note, etc.)
+- **Multi-Vault**: Single server instance serving multiple vaults via `vaults` config array
 - **Implementation**: TypeScript using @modelcontextprotocol/sdk
 
 ### Technology Stack
@@ -59,6 +60,7 @@ obsidian-mcp-server/
 ├── src/
 │   ├── index.ts              # Entry point, server initialization
 │   ├── obsidian-server.ts    # MCP request handlers (resources, tools)
+│   ├── vault-registry.ts    # Multi-vault context management
 │   ├── embeddings.ts         # Vector store and embedding generation
 │   ├── search.ts             # Keyword search implementation
 │   ├── utils.ts              # Config loading, path helpers
@@ -196,9 +198,10 @@ async function processNote(notePath: string): Promise<NoteData> {
 ### MCP Protocol Standards
 
 - **JSON-RPC 2.0**: All requests/responses follow specification
-- **URI format**: `obsidian://vault/[relative-path]` for note resources
+- **URI format**: `obsidian://vault/{vaultName}/[relative-path]` for note resources
 - **Error codes**: Standard JSON-RPC codes (-32700 to -32603)
-- **Tool naming**: snake_case (search_vault, create_note, read_note)
+- **Tool naming**: snake_case (obsidian_list_vaults, obsidian_search_vault, obsidian_create_note)
+- **Vault parameter**: All tools require a `vault` parameter; read tools accept `"*"` for cross-vault search
 - **Response format**: Text content in `content` array with `type: 'text'`
 
 ### TypeScript Code Standards
@@ -358,7 +361,7 @@ file.txt
 ```json
 {
   "mcpServers": {
-    "obsidian-vault": {
+    "obsidian": {
       "command": "node",
       "args": [
         "--expose-gc",
@@ -366,7 +369,6 @@ file.txt
         "D:\\repos\\obsidian-mcp-server\\dist\\index.js"
       ],
       "env": {
-        "OBSIDIAN_VAULT_PATH": "X:\\Path\\To\\Vault",
         "OBSIDIAN_CONFIG_PATH": "D:\\repos\\obsidian-mcp-server\\config.json"
       }
     }
@@ -376,9 +378,10 @@ file.txt
 
 **Important Notes**:
 
+- Vault paths are defined in `config.json` via the `vaults` array
 - Windows paths require double backslashes in JSON
 - Use absolute paths for reliability
-- Node.js memory flags recommended for large vaults
+- Node.js memory flags recommended for large or multiple vaults
 
 ### Vector Search Architecture
 
@@ -623,6 +626,7 @@ node dist/index.js
 
 ## Version History
 
+- **v2.0.0** (Jan 2025) - Multi-vault support, vault registry, per-vault config, obsidian_list_vaults tool
 - **v1.4.0** (Oct 2025) - File watcher auto-indexing, model logging, comprehensive documentation
 - **v1.3.0** - Vector search with local embeddings, hybrid search
 - **v1.2.0** - Write operations, configuration system

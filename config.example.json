@@ -1,4 +1,16 @@
 {
+  "vaults": [
+    {
+      "name": "work",
+      "path": "X:\\Obsidian Vaults\\Work",
+      "enableWrite": true
+    },
+    {
+      "name": "personal",
+      "path": "X:\\Obsidian Vaults\\Personal",
+      "enableWrite": false
+    }
+  ],
   "includePatterns": ["**/*.md"],
   "excludePatterns": [
     "_archive/**",
@@ -9,7 +21,7 @@
     ".git/**",
     "_assets/**"
   ],
-  "enableWrite": true,
+  "enableWrite": false,
   "vectorSearch": {
     "enabled": true,
     "provider": "transformers",
