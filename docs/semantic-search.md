@@ -69,7 +69,7 @@ Add the `vectorSearch` section to your `config.json`:
 }
 ```
 
-**Note**: Vault path is set via `OBSIDIAN_VAULT_PATH` environment variable, not in config.json.
+Vault paths are defined in the `vaults` array of `config.json`. Each vault gets its own vector store at `{vaultPath}/.mcp-vector-store/`. See [configuration.md](configuration.md) for full vault setup.
 
 ### Configuration Options
 
