@@ -200,7 +200,7 @@ async function processNote(notePath: string): Promise<NoteData> {
 - **JSON-RPC 2.0**: All requests/responses follow specification
 - **URI format**: `obsidian://vault/{vaultName}/[relative-path]` for note resources
 - **Error codes**: Standard JSON-RPC codes (-32700 to -32603)
-- **Tool naming**: snake_case (obsidian_list_vaults, obsidian_search_vault, obsidian_create_note)
+- **Tool naming**: snake_case (obsidian_list_vaults, obsidian_search_vault, obsidian_read_note, obsidian_create_note)
 - **Vault parameter**: All tools require a `vault` parameter; read tools accept `"*"` for cross-vault search
 - **Response format**: Text content in `content` array with `type: 'text'`
 

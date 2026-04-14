@@ -17,7 +17,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Config } from "./utils.js";
 import { searchVault, SearchOptions, SearchResult } from "./search.js";
-import { createNote, updateNote, deleteNote } from "./utils.js";
+import { createNote, updateNote, deleteNote, readNote, isPathSafe } from "./utils.js";
 import { VaultRegistry, VaultContext } from "./vault-registry.js";
 import { logInfo, logError } from "./logger.js";
 import * as fs from "fs/promises";
@@ -96,6 +96,29 @@ const SearchVaultInputSchema = z
   .strict();
 
 type SearchVaultInput = z.infer<typeof SearchVaultInputSchema>;
+
+// Zod schema for read note
+const ReadNoteInputSchema = z
+  .object({
+    vault: vaultWriteParam.describe(
+      'Required: Name of the vault to read from. Must be a specific vault name (not "*"). Call obsidian_list_vaults to see available vault names.'
+    ),
+    path: z
+      .string()
+      .min(1, "Path must not be empty")
+      .describe(
+        'Relative path to the note (e.g., "Projects/MyNote.md"). The .md extension is added automatically if omitted.'
+      ),
+    response_format: z
+      .nativeEnum(ResponseFormat)
+      .default(ResponseFormat.MARKDOWN)
+      .describe(
+        'Output format: "markdown" for human-readable or "json" for machine-readable (default: markdown)'
+      ),
+  })
+  .strict();
+
+type ReadNoteInput = z.infer<typeof ReadNoteInputSchema>;
 
 // Zod schema for semantic search (vector search)
 const SemanticSearchInputSchema = z
@@ -921,6 +944,111 @@ Example:
   );
 
   // =====================================================================
+  // READ NOTE TOOL
+  // =====================================================================
+
+  server.registerTool(
+    "obsidian_read_note",
+    {
+      title: "Read Obsidian Note",
+      description: `Read the full content of a specific note from an Obsidian vault.
+
+Returns the complete note content with parsed YAML frontmatter.
+This is a read-only operation.
+
+Args:
+  - vault (string): Name of the vault containing the note
+  - path (string): Relative path to the note (e.g., "Projects/MyNote.md")
+  - response_format ('markdown' | 'json', optional): Output format (default: 'markdown')
+
+Returns:
+  Full note content with frontmatter metadata.
+
+Example:
+  {
+    "vault": "work",
+    "path": "Projects/MyNote.md"
+  }`,
+      inputSchema: ReadNoteInputSchema.shape,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async (params: ReadNoteInput) => {
+      logInfo(`Executing tool: obsidian_read_note`);
+      logInfo(`Path: "${params.path}", Vault: "${params.vault}"`);
+
+      try {
+        // Resolve vault (validates name, rejects "*")
+        const ctx = registry.resolveVault(params.vault);
+        if (!ctx) {
+          throw new Error(
+            `Read note requires a specific vault name, not "*". Available vaults: ${registry.getVaultNames().join(", ")}`
+          );
+        }
+
+        // Normalize path
+        const notePath = params.path.endsWith(".md")
+          ? params.path
+          : `${params.path}.md`;
+
+        // Validate path safety
+        const fullPath = path.resolve(ctx.config.path, notePath);
+        if (!isPathSafe(fullPath, ctx.config.path)) {
+          throw new Error("Access denied: path outside vault");
+        }
+
+        // Read the note
+        const note = await readNote(fullPath);
+
+        // Derive title from frontmatter or filename
+        const title =
+          note.frontmatter?.title ||
+          path.basename(notePath, ".md");
+        const uri = `obsidian://vault/${ctx.config.name}/${notePath.replace(/\\/g, "/")}`;
+
+        // Format response
+        let responseText: string;
+        if (params.response_format === ResponseFormat.JSON) {
+          responseText = formatNoteJSON(ctx.config.name, notePath, title, note, uri);
+        } else {
+          responseText = formatNoteMarkdown(ctx.config.name, notePath, title, note, uri);
+        }
+
+        // Check character limit
+        const CHARACTER_LIMIT = 25000;
+        if (responseText.length > CHARACTER_LIMIT) {
+          responseText = responseText.substring(0, CHARACTER_LIMIT);
+          responseText += `\n\n⚠️ Note content truncated at ${CHARACTER_LIMIT} characters.`;
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: responseText,
+            },
+          ],
+        };
+      } catch (error) {
+        logError(` Read note failed:`, error);
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: `Error: Failed to read note: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  // =====================================================================
   // SEMANTIC SEARCH TOOL
   // =====================================================================
 
@@ -1308,4 +1436,58 @@ function formatSemanticResultsJSON(
   };
 
   return JSON.stringify(response, null, 2);
+}
+
+/**
+ * Format a single note as JSON
+ */
+function formatNoteJSON(
+  vault: string,
+  notePath: string,
+  title: string,
+  note: { content: string; frontmatter?: any; rawContent: string },
+  uri: string
+): string {
+  const response = {
+    vault,
+    path: notePath,
+    title,
+    frontmatter: note.frontmatter || {},
+    content: note.content,
+    uri,
+  };
+
+  return JSON.stringify(response, null, 2);
+}
+
+/**
+ * Format a single note as Markdown
+ */
+function formatNoteMarkdown(
+  vault: string,
+  notePath: string,
+  title: string,
+  note: { content: string; frontmatter?: any; rawContent: string },
+  uri: string
+): string {
+  let markdown = `# ${title}\n\n`;
+  markdown += `- **Vault**: \`${vault}\`\n`;
+  markdown += `- **Path**: \`${notePath}\`\n`;
+  markdown += `- **URI**: \`${uri}\`\n`;
+
+  if (note.frontmatter && Object.keys(note.frontmatter).length > 0) {
+    markdown += `\n## Frontmatter\n\n`;
+    for (const [key, value] of Object.entries(note.frontmatter)) {
+      if (Array.isArray(value)) {
+        markdown += `- **${key}**: ${value.map((v) => `\`${v}\``).join(", ")}\n`;
+      } else {
+        markdown += `- **${key}**: ${value}\n`;
+      }
+    }
+  }
+
+  markdown += `\n## Content\n\n`;
+  markdown += note.content;
+
+  return markdown;
 }

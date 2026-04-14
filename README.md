@@ -314,6 +314,16 @@ obsidian_semantic_search(vault="work", query="machine learning ethics")
 obsidian_semantic_search(vault="*", query="web development best practices", hybrid=true)
 ```
 
+#### obsidian_read_note
+
+Read the full content of a specific note with parsed frontmatter. Read-only operation.
+
+**Parameters:**
+
+- `vault` (required): Vault name (no `"*"`)
+- `path` (required): Relative path to note (e.g., "Projects/MyNote.md")
+- `response_format` (optional): "markdown" or "json" (default: "markdown")
+
 #### obsidian_create_note
 
 Create a new note in a specific vault. Write must be enabled for the target vault.
