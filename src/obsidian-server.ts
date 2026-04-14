@@ -285,7 +285,7 @@ Returns information about each vault including:
 - indexHealth: "healthy" | "stale" | "missing" | "model-mismatch"
 
 Use this tool first to discover available vaults before calling other tools.`,
-      inputSchema: {},
+      inputSchema: z.object({}).shape,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
