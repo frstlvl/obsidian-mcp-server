@@ -76,9 +76,7 @@ async function initializeVaultSearch(
   resolvedConfig: ResolvedVaultConfig
 ): Promise<{ vectorStore?: VectorStore; watcher?: FSWatcher }> {
   if (!resolvedConfig.vectorSearch.enabled) {
-    logInfo(
-      `Vector search DISABLED for vault "${resolvedConfig.name}"`
-    );
+    logInfo(`Vector search DISABLED for vault "${resolvedConfig.name}"`);
     return {};
   }
 
@@ -130,9 +128,7 @@ async function initializeVaultSearch(
   }
 
   // Setup file watcher for automatic index updates
-  logInfo(
-    `Setting up file watcher for vault "${resolvedConfig.name}"...`
-  );
+  logInfo(`Setting up file watcher for vault "${resolvedConfig.name}"...`);
   const watcher = chokidar.watch(resolvedConfig.path, {
     ignored: [
       /(^|[\/\\])\../, // dot files/folders
@@ -165,10 +161,13 @@ async function initializeVaultSearch(
       updateQueue.set(
         relativePath,
         setTimeout(() => {
-          vectorStore.indexSingleNote(relativePath)
+          vectorStore
+            .indexSingleNote(relativePath)
             .then(() => updateQueue.delete(relativePath))
             .catch((err) => {
-              logError(`[${resolvedConfig.name}] Failed to index added note: ${err}`);
+              logError(
+                `[${resolvedConfig.name}] Failed to index added note: ${err}`
+              );
               updateQueue.delete(relativePath);
             });
         }, DEBOUNCE_DELAY)
@@ -186,10 +185,13 @@ async function initializeVaultSearch(
       updateQueue.set(
         relativePath,
         setTimeout(() => {
-          vectorStore.indexSingleNote(relativePath)
+          vectorStore
+            .indexSingleNote(relativePath)
             .then(() => updateQueue.delete(relativePath))
             .catch((err) => {
-              logError(`[${resolvedConfig.name}] Failed to index changed note: ${err}`);
+              logError(
+                `[${resolvedConfig.name}] Failed to index changed note: ${err}`
+              );
               updateQueue.delete(relativePath);
             });
         }, DEBOUNCE_DELAY)
@@ -214,9 +216,7 @@ async function initializeVaultSearch(
       logError(`[${resolvedConfig.name}] File watcher error:`, error);
     });
 
-  logInfo(
-    `File system watcher active for vault "${resolvedConfig.name}"`
-  );
+  logInfo(`File system watcher active for vault "${resolvedConfig.name}"`);
 
   return { vectorStore, watcher };
 }
@@ -230,7 +230,9 @@ async function main() {
     initLogger(config.logging);
 
     logInfo("Starting Obsidian MCP Server...");
-    logInfo(`Configured vaults: ${config.vaults.map((v) => v.name).join(", ")}`);
+    logInfo(
+      `Configured vaults: ${config.vaults.map((v) => v.name).join(", ")}`
+    );
 
     // Initialize vault registry
     const registry = new VaultRegistry();
@@ -245,8 +247,7 @@ async function main() {
       );
 
       try {
-        const { vectorStore, watcher } =
-          await initializeVaultSearch(resolved);
+        const { vectorStore, watcher } = await initializeVaultSearch(resolved);
 
         registry.register({
           config: resolved,

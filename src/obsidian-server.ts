@@ -17,7 +17,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Config } from "./utils.js";
 import { searchVault, SearchOptions, SearchResult } from "./search.js";
-import { createNote, updateNote, deleteNote, readNote, isPathSafe } from "./utils.js";
+import {
+  createNote,
+  updateNote,
+  deleteNote,
+  readNote,
+  isPathSafe,
+} from "./utils.js";
 import { VaultRegistry, VaultContext } from "./vault-registry.js";
 import { logInfo, logError } from "./logger.js";
 import * as fs from "fs/promises";
@@ -46,7 +52,7 @@ const vaultWriteParam = z
       'Write operations require a specific vault name, not "*". Call obsidian_list_vaults to see available vault names.',
   })
   .describe(
-    "Required: Name of the vault to write to. Must be a specific vault name (not \"*\"). Call obsidian_list_vaults to see available vault names."
+    'Required: Name of the vault to write to. Must be a specific vault name (not "*"). Call obsidian_list_vaults to see available vault names.'
   );
 
 // Zod schemas for tool input validation
@@ -100,9 +106,7 @@ type SearchVaultInput = z.infer<typeof SearchVaultInputSchema>;
 // Zod schema for read note
 const ReadNoteInputSchema = z
   .object({
-    vault: vaultWriteParam.describe(
-      'Required: Name of the vault to read from. Must be a specific vault name (not "*"). Call obsidian_list_vaults to see available vault names.'
-    ),
+    vault: vaultWriteParam,
     path: z
       .string()
       .min(1, "Path must not be empty")
@@ -365,8 +369,7 @@ Use this tool first to discover available vaults before calling other tools.`,
               } else if (meta.lastIndexedAt) {
                 const ageMs = Date.now() - meta.lastIndexedAt;
                 const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-                info.indexHealth =
-                  ageMs > sevenDaysMs ? "stale" : "healthy";
+                info.indexHealth = ageMs > sevenDaysMs ? "stale" : "healthy";
               }
             }
           } catch {
@@ -546,7 +549,10 @@ Error Handling:
             params.offset || 0
           );
         } else {
-          responseText = formatSearchResultsJSON(allResults, params.offset || 0);
+          responseText = formatSearchResultsJSON(
+            allResults,
+            params.offset || 0
+          );
         }
 
         // Check character limit and truncate if needed
@@ -1005,17 +1011,27 @@ Example:
         const note = await readNote(fullPath);
 
         // Derive title from frontmatter or filename
-        const title =
-          note.frontmatter?.title ||
-          path.basename(notePath, ".md");
+        const title = note.frontmatter?.title || path.basename(notePath, ".md");
         const uri = `obsidian://vault/${ctx.config.name}/${notePath.replace(/\\/g, "/")}`;
 
         // Format response
         let responseText: string;
         if (params.response_format === ResponseFormat.JSON) {
-          responseText = formatNoteJSON(ctx.config.name, notePath, title, note, uri);
+          responseText = formatNoteJSON(
+            ctx.config.name,
+            notePath,
+            title,
+            note,
+            uri
+          );
         } else {
-          responseText = formatNoteMarkdown(ctx.config.name, notePath, title, note, uri);
+          responseText = formatNoteMarkdown(
+            ctx.config.name,
+            notePath,
+            title,
+            note,
+            uri
+          );
         }
 
         // Check character limit
@@ -1144,9 +1160,7 @@ Note: Requires vector store to be initialized for the target vault. Call obsidia
 
           for (const ctx of vaultsToSearch) {
             if (!ctx.vectorStore) {
-              logInfo(
-                `Skipping vault "${ctx.config.name}" - no vector store`
-              );
+              logInfo(`Skipping vault "${ctx.config.name}" - no vector store`);
               continue;
             }
 

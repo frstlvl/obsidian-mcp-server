@@ -131,7 +131,8 @@ export async function loadConfig(): Promise<Config> {
   // Try to load config file from the repo root (parent of dist/)
   // When compiled, this will be in dist/, so go up one level
   const repoRoot = path.join(__dirname, "..");
-  const configPath = process.env.OBSIDIAN_CONFIG_PATH || path.join(repoRoot, "config.json");
+  const configPath =
+    process.env.OBSIDIAN_CONFIG_PATH || path.join(repoRoot, "config.json");
 
   let rawConfig: any = null;
 
@@ -202,7 +203,9 @@ export async function loadConfig(): Promise<Config> {
     config.vaultPath = config.vaults[0].path;
 
     logInfo(`Configuration loaded from: ${configPath}`);
-    logInfo(`Configured vaults: ${config.vaults.map((v) => v.name).join(", ")}`);
+    logInfo(
+      `Configured vaults: ${config.vaults.map((v) => v.name).join(", ")}`
+    );
     return config;
   }
 

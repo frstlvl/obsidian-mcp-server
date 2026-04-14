@@ -404,8 +404,7 @@ Whether to include YAML frontmatter fields in search results.
 }
 }
 
-````
-
+````markdown
 **Use when**: Production setup with all features (recommended).
 
 ### Scenario 5: Force Re-Indexing
@@ -417,6 +416,7 @@ Whether to include YAML frontmatter fields in search results.
     "indexOnStartup": "always"
   }
 }
+```
 ````
 
 **Use when**: Debugging, testing, or forcing a fresh index build.

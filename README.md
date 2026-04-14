@@ -285,10 +285,10 @@ Search vault by keywords, tags, or folders.
 
 ```typescript
 // Search a specific vault
-obsidian_search_vault(vault="work", query="JavaScript testing")
+obsidian_search_vault((vault = "work"), (query = "JavaScript testing"));
 
 // Search across all vaults
-obsidian_search_vault(vault="*", query="project", tags=["active"])
+obsidian_search_vault((vault = "*"), (query = "project"), (tags = ["active"]));
 ```
 
 #### obsidian_semantic_search
@@ -308,10 +308,14 @@ Search vault using semantic similarity (meaning-based) instead of keyword matchi
 
 ```typescript
 // Semantic search in one vault
-obsidian_semantic_search(vault="work", query="machine learning ethics")
+obsidian_semantic_search((vault = "work"), (query = "machine learning ethics"));
 
 // Cross-vault hybrid search
-obsidian_semantic_search(vault="*", query="web development best practices", hybrid=true)
+obsidian_semantic_search(
+  (vault = "*"),
+  (query = "web development best practices"),
+  (hybrid = true)
+);
 ```
 
 #### obsidian_read_note
