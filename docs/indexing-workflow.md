@@ -42,21 +42,25 @@ Testing with 5,463 notes revealed:
 # 1. Navigate to project directory
 cd D:\repos\obsidian-mcp-server
 
-# 2. Set environment variables
-$env:OBSIDIAN_VAULT_PATH = "X:\Path\To\Your\Vault"
+# 2. Ensure config.json has your vaults configured
+# (vault paths are defined in the "vaults" array — see docs/configuration.md)
+
+# 3. Optionally point to config.json if not in repo root
 $env:OBSIDIAN_CONFIG_PATH = "D:\repos\obsidian-mcp-server\config.json"
 
-# 3. Run with increased memory allocation
+# 4. Run with increased memory allocation
 node --expose-gc --max-old-space-size=16384 dist\index.js
 
-# Expected output:
-# [INFO] Vector store initialized
+# Expected output (each configured vault is indexed):
+# [INFO] Starting Obsidian MCP Server...
+# [INFO] Configured vaults: work, personal
+# [INFO] Vector store initialized for vault "work"
 # [INFO] Starting full vault indexing...
 # [INFO] Indexed 50/5463 notes (0 failed, 0 skipped)
-# [INFO] Indexed 100/5463 notes (0 failed, 0 skipped)
-# [INFO] Pipeline refreshed at 500 notes
 # ...
 # [INFO] Indexing completed: indexed=5421, skipped=0, failed=42
+# [INFO] Vector store initialized for vault "personal"
+# ...
 ```
 
 #### macOS/Linux (Bash)
@@ -65,20 +69,23 @@ node --expose-gc --max-old-space-size=16384 dist\index.js
 # 1. Navigate to project directory
 cd ~/obsidian-mcp-server
 
-# 2. Set environment variables
-export OBSIDIAN_VAULT_PATH="/Users/YourName/Documents/ObsidianVault"
+# 2. Optionally point to config.json if not in repo root
 export OBSIDIAN_CONFIG_PATH="$HOME/obsidian-mcp-server/config.json"
 
 # 3. Run with increased memory allocation
 node --expose-gc --max-old-space-size=16384 dist/index.js
 ```
 
+> **Note**: In v2.0+, vault paths are defined in the `vaults` array in `config.json`,
+> not via the `OBSIDIAN_VAULT_PATH` environment variable. The server indexes all
+> configured vaults sequentially on startup.
+
 ### What Happens During Indexing
 
 **v1.4.0 Parallel Batch Processing Architecture**:
 
-1. **Initialization** - Loads configuration and initializes vector store
-2. **Batch processing** - Notes processed in parallel batches of 10:
+1. **Initialization** - Loads configuration, resolves all configured vaults, and initializes per-vault vector stores
+2. **Per-vault processing** - Each vault is indexed sequentially:
    - Concurrent embedding generation with Promise.all
    - Sequential insertion into Vectra (maintains data integrity)
    - Each batch completes in ~2-3 seconds (vs ~20-30 seconds sequential)
@@ -147,7 +154,7 @@ This prevents automatic re-indexing when Claude Desktop starts, since you've alr
 
 **Status: ✅ VALIDATED - Production Ready**
 
-The MCP server includes a file system watcher that handles incremental updates automatically. This has been fully tested and validated with the following results:
+The MCP server includes a per-vault file system watcher that handles incremental updates automatically. This has been fully tested and validated with the following results:
 
 - **Add note**: ✅ Automatically indexes new `.md` files (~2 seconds)
 - **Edit note**: ✅ Re-indexes modified files (2-second debounce for stability)
@@ -159,7 +166,7 @@ The MCP server includes a file system watcher that handles incremental updates a
 - Modified note with new token → Updated content found (score: 1.0)
 - Deleted note → Completely removed from index (no results)
 
-The file watcher is reliable for day-to-day vault maintenance. You only need standalone indexing for initial setup or model changes
+The file watcher is reliable for day-to-day vault maintenance. Each configured vault gets its own watcher instance. You only need standalone indexing for initial setup or model changes.
 
 ## Model Switching Workflow
 
@@ -180,12 +187,16 @@ Edit `config.json`:
 
 ### 2. Clean Vector Store
 
+Delete the `.mcp-vector-store` directory in **each** configured vault:
+
 ```powershell
-# Windows
-Remove-Item "X:\Path\To\Vault\.mcp-vector-store\*" -Recurse -Force
+# Windows — repeat for each vault path
+Remove-Item "C:\Users\YourName\Documents\WorkVault\.mcp-vector-store\*" -Recurse -Force
+Remove-Item "C:\Users\YourName\Documents\PersonalVault\.mcp-vector-store\*" -Recurse -Force
 
 # macOS/Linux
-rm -rf "/path/to/vault/.mcp-vector-store/"*
+rm -rf "/path/to/work-vault/.mcp-vector-store/"*
+rm -rf "/path/to/personal-vault/.mcp-vector-store/"*
 ```
 
 **Why clean?** Different models produce different embedding dimensions:

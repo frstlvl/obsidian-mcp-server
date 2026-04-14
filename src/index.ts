@@ -20,9 +20,11 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { loadConfig } from "./utils.js";
+import { loadConfig, resolveVaultConfig } from "./utils.js";
+import type { ResolvedVaultConfig } from "./utils.js";
 import { setupObsidianHandlers } from "./obsidian-server.js";
 import { VectorStore } from "./embeddings.js";
+import { VaultRegistry } from "./vault-registry.js";
 import { initLogger, logInfo, logError, logWarn } from "./logger.js";
 import chokidar, { type FSWatcher } from "chokidar";
 import * as path from "path";
@@ -33,11 +35,14 @@ import { dirname } from "path";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// Module-scope registry for access from signal handlers
+let vaultRegistry: VaultRegistry | undefined;
+
 /**
- * Spawn a detached background worker to handle indexing
- * The worker survives Claude Desktop restarts
+ * Spawn a detached background worker to handle indexing for a specific vault.
+ * The worker survives Claude Desktop restarts.
  */
-function spawnIndexingWorker(vaultPath: string): void {
+function spawnIndexingWorker(vaultPath: string, vaultName: string): void {
   const workerScript = path.join(__dirname, "indexing-worker.js");
   const configPath = process.env.OBSIDIAN_CONFIG_PATH || "";
 
@@ -58,7 +63,162 @@ function spawnIndexingWorker(vaultPath: string): void {
   // Unref so the parent can exit without waiting
   worker.unref();
 
-  logInfo(`Spawned indexing worker (PID: ${worker.pid}) - runs independently`);
+  logInfo(
+    `Spawned indexing worker for vault "${vaultName}" (PID: ${worker.pid}) - runs independently`
+  );
+}
+
+/**
+ * Initialize vector store and file watcher for a single vault.
+ * Returns the VectorStore and FSWatcher instances (or undefined if disabled).
+ */
+async function initializeVaultSearch(
+  resolvedConfig: ResolvedVaultConfig
+): Promise<{ vectorStore?: VectorStore; watcher?: FSWatcher }> {
+  if (!resolvedConfig.vectorSearch.enabled) {
+    logInfo(`Vector search DISABLED for vault "${resolvedConfig.name}"`);
+    return {};
+  }
+
+  logInfo(`Initializing vector search for vault "${resolvedConfig.name}"...`);
+  logInfo(`  Provider: ${resolvedConfig.vectorSearch.provider}`);
+  logInfo(
+    `  Model: ${resolvedConfig.vectorSearch.model || "Xenova/all-MiniLM-L6-v2 (default)"}`
+  );
+
+  const vectorStore = new VectorStore(resolvedConfig.path, {
+    provider: resolvedConfig.vectorSearch.provider,
+    model: resolvedConfig.vectorSearch.model,
+    anthropicApiKey: resolvedConfig.vectorSearch.anthropicApiKey,
+  });
+
+  await vectorStore.initialize();
+  logInfo(`Vector store initialized for vault "${resolvedConfig.name}"`);
+
+  // Determine if indexing is needed
+  const indexOnStartup = resolvedConfig.vectorSearch.indexOnStartup;
+  let shouldIndex = false;
+  let indexReason = "";
+
+  if (indexOnStartup === true || indexOnStartup === "always") {
+    shouldIndex = true;
+    indexReason = "indexOnStartup set to always";
+  } else if (indexOnStartup === false || indexOnStartup === "never") {
+    shouldIndex = false;
+    indexReason = "indexOnStartup disabled";
+  } else {
+    // "auto" mode (or undefined = default to auto)
+    const decision = await vectorStore.shouldReindex();
+    shouldIndex = decision.reindex;
+    indexReason = decision.reason;
+  }
+
+  logInfo(`Vault "${resolvedConfig.name}": ${indexReason}`);
+
+  if (shouldIndex) {
+    logInfo(
+      `Starting background indexing worker for vault "${resolvedConfig.name}"...`
+    );
+    spawnIndexingWorker(resolvedConfig.path, resolvedConfig.name);
+  } else {
+    const stats = await vectorStore.getStats();
+    logInfo(
+      `Vault "${resolvedConfig.name}" vector store ready: ${stats.totalDocuments} documents indexed`
+    );
+  }
+
+  // Setup file watcher for automatic index updates
+  logInfo(`Setting up file watcher for vault "${resolvedConfig.name}"...`);
+  const watcher = chokidar.watch(resolvedConfig.path, {
+    ignored: [
+      /(^|[\/\\])\../, // dot files/folders
+      /node_modules/,
+      /.obsidian/,
+      /_data/,
+    ],
+    persistent: true,
+    ignoreInitial: true,
+    awaitWriteFinish: {
+      stabilityThreshold: 1000,
+      pollInterval: 100,
+    },
+  });
+
+  // Debounce map to prevent rapid successive updates
+  const updateQueue = new Map<string, NodeJS.Timeout>();
+  const DEBOUNCE_DELAY = 2000;
+
+  watcher
+    .on("add", (filePath: string) => {
+      if (!filePath.endsWith(".md")) return;
+
+      const relativePath = path.relative(resolvedConfig.path, filePath);
+      logInfo(`[${resolvedConfig.name}] File added: ${relativePath}`);
+
+      if (updateQueue.has(relativePath)) {
+        clearTimeout(updateQueue.get(relativePath)!);
+      }
+      updateQueue.set(
+        relativePath,
+        setTimeout(() => {
+          vectorStore
+            .indexSingleNote(relativePath)
+            .then(() => updateQueue.delete(relativePath))
+            .catch((err) => {
+              logError(
+                `[${resolvedConfig.name}] Failed to index added note: ${err}`
+              );
+              updateQueue.delete(relativePath);
+            });
+        }, DEBOUNCE_DELAY)
+      );
+    })
+    .on("change", (filePath: string) => {
+      if (!filePath.endsWith(".md")) return;
+
+      const relativePath = path.relative(resolvedConfig.path, filePath);
+      logInfo(`[${resolvedConfig.name}] File changed: ${relativePath}`);
+
+      if (updateQueue.has(relativePath)) {
+        clearTimeout(updateQueue.get(relativePath)!);
+      }
+      updateQueue.set(
+        relativePath,
+        setTimeout(() => {
+          vectorStore
+            .indexSingleNote(relativePath)
+            .then(() => updateQueue.delete(relativePath))
+            .catch((err) => {
+              logError(
+                `[${resolvedConfig.name}] Failed to index changed note: ${err}`
+              );
+              updateQueue.delete(relativePath);
+            });
+        }, DEBOUNCE_DELAY)
+      );
+    })
+    .on("unlink", (filePath: string) => {
+      if (!filePath.endsWith(".md")) return;
+
+      const relativePath = path.relative(resolvedConfig.path, filePath);
+      logInfo(`[${resolvedConfig.name}] File deleted: ${relativePath}`);
+
+      if (updateQueue.has(relativePath)) {
+        clearTimeout(updateQueue.get(relativePath)!);
+        updateQueue.delete(relativePath);
+      }
+
+      vectorStore.removeNote(relativePath).catch((err) => {
+        logError(`[${resolvedConfig.name}] Failed to remove note: ${err}`);
+      });
+    })
+    .on("error", (error: unknown) => {
+      logError(`[${resolvedConfig.name}] File watcher error:`, error);
+    });
+
+  logInfo(`File system watcher active for vault "${resolvedConfig.name}"`);
+
+  return { vectorStore, watcher };
 }
 
 async function main() {
@@ -70,162 +230,53 @@ async function main() {
     initLogger(config.logging);
 
     logInfo("Starting Obsidian MCP Server...");
-    logInfo(`Vault path: ${config.vaultPath}`);
-    logInfo(`Write operations: ${config.enableWrite ? "ENABLED" : "DISABLED"}`);
+    logInfo(
+      `Configured vaults: ${config.vaults.map((v) => v.name).join(", ")}`
+    );
 
-    // Initialize vector store if enabled
-    let vectorStore: VectorStore | undefined;
-    let watcher: FSWatcher | undefined;
+    // Initialize vault registry
+    const registry = new VaultRegistry();
 
-    if (config.vectorSearch?.enabled) {
-      logInfo("Initializing vector search...");
-      logInfo(`Provider: ${config.vectorSearch.provider}`);
+    // Initialize each vault
+    for (const vaultConfig of config.vaults) {
+      const resolved = resolveVaultConfig(vaultConfig, config);
+
+      logInfo(`Initializing vault "${resolved.name}" at ${resolved.path}`);
       logInfo(
-        `Model: ${config.vectorSearch.model || "Xenova/all-MiniLM-L6-v2 (default)"}`
+        `  Write operations: ${resolved.enableWrite ? "ENABLED" : "DISABLED"}`
       );
 
       try {
-        vectorStore = new VectorStore(config.vaultPath, {
-          provider: config.vectorSearch.provider,
-          model: config.vectorSearch.model,
-          anthropicApiKey: config.vectorSearch.anthropicApiKey,
+        const { vectorStore, watcher } = await initializeVaultSearch(resolved);
+
+        registry.register({
+          config: resolved,
+          vectorStore,
+          watcher,
         });
-
-        await vectorStore.initialize();
-        logInfo("Vector store initialized");
-
-        // Determine if indexing is needed
-        const indexOnStartup = config.vectorSearch.indexOnStartup;
-        let shouldIndex = false;
-        let indexReason = "";
-
-        if (indexOnStartup === true || indexOnStartup === "always") {
-          shouldIndex = true;
-          indexReason = "indexOnStartup set to always";
-        } else if (indexOnStartup === false || indexOnStartup === "never") {
-          shouldIndex = false;
-          indexReason = "indexOnStartup disabled";
-        } else {
-          // "auto" mode (or undefined = default to auto)
-          const decision = await vectorStore.shouldReindex();
-          shouldIndex = decision.reindex;
-          indexReason = decision.reason;
-        }
-
-        logInfo(indexReason);
-
-        if (shouldIndex) {
-          logInfo("Starting background indexing worker...");
-          spawnIndexingWorker(config.vaultPath);
-          logInfo(
-            "Indexing worker started in background - server ready to handle requests"
-          );
-        } else {
-          const stats = await vectorStore.getStats();
-          logInfo(
-            `Vector store ready: ${stats.totalDocuments} documents indexed`
-          );
-        }
-
-        // Setup file watcher for automatic index updates
-        logInfo(
-          "Setting up file system watcher for automatic index updates..."
-        );
-        watcher = chokidar.watch(config.vaultPath, {
-          ignored: [
-            /(^|[\/\\])\../, // dot files/folders
-            /node_modules/,
-            /.obsidian/,
-            /_data/,
-          ],
-          persistent: true,
-          ignoreInitial: true, // Don't trigger for existing files
-          awaitWriteFinish: {
-            stabilityThreshold: 1000, // Wait 1s for file writes to finish
-            pollInterval: 100,
-          },
-        });
-
-        // Debounce map to prevent rapid successive updates
-        const updateQueue = new Map<string, NodeJS.Timeout>();
-        const DEBOUNCE_DELAY = 2000; // 2 seconds
-
-        watcher
-          .on("add", (filePath: string) => {
-            if (!filePath.endsWith(".md")) return;
-
-            const relativePath = path.relative(config.vaultPath, filePath);
-            logInfo(`File added: ${relativePath}`);
-
-            // Debounce: clear existing timeout and set new one
-            if (updateQueue.has(relativePath)) {
-              clearTimeout(updateQueue.get(relativePath)!);
-            }
-            updateQueue.set(
-              relativePath,
-              setTimeout(async () => {
-                await vectorStore!.indexSingleNote(relativePath);
-                updateQueue.delete(relativePath);
-              }, DEBOUNCE_DELAY)
-            );
-          })
-          .on("change", (filePath: string) => {
-            if (!filePath.endsWith(".md")) return;
-
-            const relativePath = path.relative(config.vaultPath, filePath);
-            logInfo(`File changed: ${relativePath}`);
-
-            // Debounce: clear existing timeout and set new one
-            if (updateQueue.has(relativePath)) {
-              clearTimeout(updateQueue.get(relativePath)!);
-            }
-            updateQueue.set(
-              relativePath,
-              setTimeout(async () => {
-                await vectorStore!.indexSingleNote(relativePath);
-                updateQueue.delete(relativePath);
-              }, DEBOUNCE_DELAY)
-            );
-          })
-          .on("unlink", (filePath: string) => {
-            if (!filePath.endsWith(".md")) return;
-
-            const relativePath = path.relative(config.vaultPath, filePath);
-            logInfo(`File deleted: ${relativePath}`);
-
-            // Cancel pending update if any
-            if (updateQueue.has(relativePath)) {
-              clearTimeout(updateQueue.get(relativePath)!);
-              updateQueue.delete(relativePath);
-            }
-
-            // Remove from index immediately (no debounce needed for deletions)
-            vectorStore!.removeNote(relativePath).catch((err) => {
-              logError(`Failed to remove note: ${err}`);
-            });
-          })
-          .on("error", (error: unknown) => {
-            logError("File watcher error:", error);
-          });
-
-        logInfo("File system watcher active - index will update automatically");
       } catch (error) {
-        logWarn("WARNING: Failed to initialize vector search:", error);
-        logWarn("Continuing without semantic search capability...");
-        vectorStore = undefined;
+        logWarn(
+          `WARNING: Failed to initialize vault "${resolved.name}":`,
+          error
+        );
+        logWarn(
+          `Registering vault "${resolved.name}" without vector search...`
+        );
+        // Register without vector search so the vault is still available for keyword search
+        registry.register({ config: resolved });
       }
-    } else {
-      logInfo("Vector search: DISABLED (enable in config for semantic search)");
     }
+
+    logInfo(`${registry.size} vault(s) initialized`);
 
     // Create MCP server instance
     const server = new McpServer({
       name: "obsidian-mcp-server",
-      version: "1.0.0",
+      version: "2.0.0",
     });
 
-    // Setup Obsidian-specific request handlers
-    setupObsidianHandlers(server, config, vectorStore);
+    // Setup Obsidian-specific request handlers with vault registry
+    setupObsidianHandlers(server, config, registry);
 
     // Create stdio transport
     const transport = new StdioServerTransport();
@@ -237,10 +288,8 @@ async function main() {
     logInfo("Listening on stdio transport...");
     logInfo("Ready for connections from Claude");
 
-    // Store watcher in a way we can access it from signal handlers
-    if (watcher) {
-      (global as any).__fileWatcher = watcher;
-    }
+    // Store registry at module scope for signal handlers
+    vaultRegistry = registry;
   } catch (error) {
     logError("FATAL: Failed to start server:", error);
     logError("Stack trace:", error instanceof Error ? error.stack : "N/A");
@@ -249,20 +298,18 @@ async function main() {
 }
 
 // Handle graceful shutdown
-process.on("SIGINT", () => {
+process.on("SIGINT", async () => {
   logInfo("Received SIGINT, shutting down gracefully...");
-  const watcher = (global as any).__fileWatcher;
-  if (watcher) {
-    watcher.close();
+  if (vaultRegistry) {
+    await vaultRegistry.shutdown();
   }
   process.exit(0);
 });
 
-process.on("SIGTERM", () => {
+process.on("SIGTERM", async () => {
   logInfo("Received SIGTERM, shutting down gracefully...");
-  const watcher = (global as any).__fileWatcher;
-  if (watcher) {
-    watcher.close();
+  if (vaultRegistry) {
+    await vaultRegistry.shutdown();
   }
   process.exit(0);
 });

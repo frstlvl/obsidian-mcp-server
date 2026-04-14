@@ -34,11 +34,18 @@ Add the `vectorSearch` section to your `config.json`:
 
 ```json
 {
+  "vaults": [
+    {
+      "name": "work",
+      "path": "C:\\Users\\YourName\\Documents\\WorkVault",
+      "enableWrite": true
+    }
+  ],
   "vectorSearch": {
     "enabled": true,
     "provider": "transformers",
-    "model": "Xenova/all-MiniLM-L6-v2",
-    "autoIndex": true
+    "model": "Xenova/bge-small-en-v1.5",
+    "indexOnStartup": "auto"
   },
   "searchOptions": {
     "maxResults": 20,
@@ -47,24 +54,26 @@ Add the `vectorSearch` section to your `config.json`:
 }
 ```
 
-**Note**: Vault path is set via `OBSIDIAN_VAULT_PATH` environment variable, not in config.json.
+Vault paths are defined in the `vaults` array. Each vault gets its own vector store at `{vaultPath}/.mcp-vector-store/`.
 
 ### Configuration Options
 
-| Option      | Type    | Default                     | Description                                            |
-| ----------- | ------- | --------------------------- | ------------------------------------------------------ |
-| `enabled`   | boolean | `false`                     | Enable/disable semantic search                         |
-| `provider`  | string  | `"transformers"`            | Embedding provider (`"transformers"` or `"anthropic"`) |
-| `model`     | string  | `"Xenova/all-MiniLM-L6-v2"` | Embedding model to use                                 |
-| `autoIndex` | boolean | `true`                      | Automatically index vault on server startup            |
+| Option           | Type              | Default                      | Description                                                            |
+| ---------------- | ----------------- | ---------------------------- | ---------------------------------------------------------------------- |
+| `enabled`        | boolean           | `false`                      | Enable/disable semantic search                                         |
+| `provider`       | string            | `"transformers"`             | Embedding provider (`"transformers"` or `"anthropic"`)                 |
+| `model`          | string            | `"Xenova/bge-small-en-v1.5"` | Embedding model to use                                                 |
+| `indexOnStartup` | string \| boolean | `"auto"`                     | When to index vault on startup ("auto", "always", "never", or boolean) |
 
 ### Supported Models
 
 **Transformers.js Models** (local, no API key required):
 
-- `Xenova/all-MiniLM-L6-v2` - Fast, good quality, 384 dimensions (recommended)
-- `Xenova/all-mpnet-base-v2` - Higher quality, 768 dimensions
-- `Xenova/paraphrase-multilingual-MiniLM-L12-v2` - Multilingual support
+- `Xenova/bge-small-en-v1.5` - 384 dims, excellent quality (default, recommended)
+- `Xenova/all-MiniLM-L6-v2` - 384 dims, fast, good quality
+- `Xenova/bge-base-en-v1.5` - 768 dims, best quality, slower
+- `Xenova/all-mpnet-base-v2` - 768 dims, alternative high-quality
+- `Xenova/paraphrase-multilingual-MiniLM-L12-v2` - 384 dims, multilingual (50+ languages)
 
 **Anthropic Models** (future support):
 
@@ -78,6 +87,7 @@ Once enabled, Claude can use the `obsidian_semantic_search` tool:
 
 ```json
 {
+  "vault": "work",
   "query": "What are my thoughts on machine learning ethics?",
   "limit": 10,
   "min_score": 0.5,
@@ -88,6 +98,7 @@ Once enabled, Claude can use the `obsidian_semantic_search` tool:
 
 #### Parameters
 
+- **vault** (required): Vault name or `"*"` for cross-vault search
 - **query** (required): Natural language query describing what you're looking for
 - **limit** (optional): Maximum results to return (1-50, default: 10)
 - **min_score** (optional): Minimum similarity threshold (0-1, default: 0.5)
@@ -108,6 +119,7 @@ Once enabled, Claude can use the `obsidian_semantic_search` tool:
 
 ```json
 {
+  "vault": "*",
   "query": "machine learning deployment strategies",
   "hybrid": true,
   "limit": 15
@@ -118,13 +130,13 @@ Once enabled, Claude can use the `obsidian_semantic_search` tool:
 
 ### 1. Indexing Phase
 
-When the server starts (if `autoIndex: true`):
+When the server starts (if `indexOnStartup: "auto"` or `"always"`):
 
-1. Scans all markdown files in your vault
+1. Scans all markdown files in each configured vault
 2. For each note:
    - Reads title, frontmatter, and content
    - Generates embedding vector (384-768 dimensions)
-   - Stores in ChromaDB with metadata
+   - Stores in Vectra with metadata
 3. Tracks modification times to skip unchanged notes on re-index
 
 **Storage Location**: `.mcp-vector-store/` in your vault directory (automatically created)
@@ -134,9 +146,10 @@ When the server starts (if `autoIndex: true`):
 When Claude performs a semantic search:
 
 1. Generates embedding for the query
-2. Performs cosine similarity search in ChromaDB
-3. Returns top N most similar notes with scores
+2. Performs cosine similarity search in Vectra
+3. Returns top N most similar notes with scores (tagged with vault name)
 4. (Hybrid mode) Merges with keyword search results (60% semantic, 40% keyword)
+5. (Cross-vault) When `vault: "*"`, searches all vaults and merges results by score
 
 ### 3. Similarity Scoring
 
@@ -189,7 +202,7 @@ After first index, only changed notes are re-indexed:
 
 ### Embeddings Size
 
-With `Xenova/all-MiniLM-L6-v2` (384 dimensions):
+With `Xenova/bge-small-en-v1.5` (384 dimensions):
 
 - **Per note**: ~2-4 KB (embedding + metadata)
 - **1,000 notes**: ~2-4 MB
@@ -228,7 +241,7 @@ Vectra stores vectors efficiently in `.mcp-vector-store/` directory.
 
 **Solutions**:
 
-1. Set `autoIndex: false` and index manually later
+1. Set `indexOnStartup: false` and index manually later
 2. Check vault path permissions (needs read access)
 3. Ensure enough disk space for embeddings
 4. Check for corrupted markdown files (skip them in `excludePatterns`)
@@ -342,7 +355,7 @@ Add to your `.gitignore`:
 - [ ] Manual re-index MCP tool (on-demand re-indexing without restart)
 - [ ] OpenAI embeddings support
 - [ ] Anthropic embeddings (when API available)
-- [ ] Cross-vault semantic search
+- [x] Cross-vault semantic search (v2.0)
 - [ ] Customizable embedding dimensions
 - [ ] Vector store compression
 - [ ] Export/import embeddings
@@ -355,7 +368,7 @@ Add to your `.gitignore`:
 class VectorStore {
   constructor(vaultPath: string, config: EmbeddingConfig);
 
-  // Initialize vector store and ChromaDB
+  // Initialize vector store and Vectra index
   async initialize(): Promise<void>;
 
   // Index entire vault (or incremental update)

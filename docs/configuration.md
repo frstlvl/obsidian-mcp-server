@@ -2,70 +2,31 @@
 
 ## Overview
 
-The Obsidian MCP Server uses two configuration sources:
+The Obsidian MCP Server uses a JSON configuration file to define vaults and behavior:
 
-1. **Environment Variable** (`OBSIDIAN_VAULT_PATH`) - Controls vault location
-2. **Config File** (`config.json`) - Controls features and behavior
+1. **Config File** (`config.json`) - Defines vaults, features, and behavior
+2. **Environment Variable** (`OBSIDIAN_CONFIG_PATH`) - Points to config file location (optional)
 
 ## Quick Start
 
-### 1. Set Vault Path (Required)
+### 1. Create config.json
 
-The vault path MUST be set via environment variable:
-
-**Windows (PowerShell):**
-
-```powershell
-$env:OBSIDIAN_VAULT_PATH = "/path/to/your/vault"
-```
-
-**macOS/Linux (Bash):**
-
-```bash
-export OBSIDIAN_VAULT_PATH="/path/to/your/vault"
-```
-
-**Claude Desktop (Windows):**
+Create `config.json` in the repo root with your vault(s):
 
 ```json
 {
-  "mcpServers": {
-    "obsidian": {
-      "command": "node",
-      "args": ["C:\\path\\to\\obsidian-mcp-server\\dist\\index.js"],
-      "env": {
-        "OBSIDIAN_VAULT_PATH": "C:\\Users\\YourName\\Documents\\ObsidianVault"
-      }
+  "vaults": [
+    {
+      "name": "work",
+      "path": "C:\\Users\\YourName\\Documents\\WorkVault",
+      "enableWrite": true
+    },
+    {
+      "name": "personal",
+      "path": "C:\\Users\\YourName\\Documents\\PersonalVault",
+      "enableWrite": false
     }
-  }
-}
-```
-
-**Claude Desktop (macOS):**
-
-```json
-{
-  "mcpServers": {
-    "obsidian": {
-      "command": "node",
-      "args": ["/Users/YourName/obsidian-mcp-server/dist/index.js"],
-      "env": {
-        "OBSIDIAN_VAULT_PATH": "/Users/YourName/Documents/ObsidianVault"
-      }
-    }
-  }
-}
-```
-
-### 2. Create config.json (Optional)
-
-If you want to customize behavior, create `config.json` in the repo root:
-
-```json
-{
-  "includePatterns": ["**/*.md"],
-  "excludePatterns": [".obsidian/**", ".trash/**", "node_modules/**"],
-  "enableWrite": true,
+  ],
   "vectorSearch": {
     "enabled": true,
     "provider": "transformers",
@@ -74,9 +35,7 @@ If you want to customize behavior, create `config.json` in the repo root:
   },
   "searchOptions": {
     "maxResults": 20,
-    "excerptLength": 200,
-    "caseSensitive": false,
-    "includeMetadata": true
+    "excerptLength": 200
   },
   "logging": {
     "level": "info",
@@ -85,7 +44,100 @@ If you want to customize behavior, create `config.json` in the repo root:
 }
 ```
 
+Each vault entry requires a unique `name` (used in tool parameters) and a `path` to the Obsidian vault directory.
+
+### 2. Configure Claude Desktop
+
+**Windows:**
+
+```json
+{
+  "mcpServers": {
+    "obsidian": {
+      "command": "node",
+      "args": [
+        "--expose-gc",
+        "--max-old-space-size=16384",
+        "D:\\repos\\obsidian-mcp-server\\dist\\index.js"
+      ],
+      "env": {
+        "OBSIDIAN_CONFIG_PATH": "D:\\repos\\obsidian-mcp-server\\config.json"
+      }
+    }
+  }
+}
+```
+
+**macOS:**
+
+```json
+{
+  "mcpServers": {
+    "obsidian": {
+      "command": "node",
+      "args": [
+        "--expose-gc",
+        "--max-old-space-size=16384",
+        "/Users/YourName/obsidian-mcp-server/dist/index.js"
+      ],
+      "env": {
+        "OBSIDIAN_CONFIG_PATH": "/Users/YourName/obsidian-mcp-server/config.json"
+      }
+    }
+  }
+}
+```
+
+> **Legacy Note:** The `OBSIDIAN_VAULT_PATH` environment variable is still supported for backward compatibility. If present and no `vaults` array is defined, it is auto-migrated to a single vault entry at startup. New installations should use `config.json` with a `vaults` array.
+
 ## Configuration Reference
+
+### Vaults
+
+**`vaults`** (array of objects, required)
+
+Each vault object defines an Obsidian vault the server can access:
+
+| Field             | Type     | Required | Description                                        |
+| ----------------- | -------- | -------- | -------------------------------------------------- |
+| `name`            | string   | Yes      | Unique identifier used in tool `vault` parameter   |
+| `path`            | string   | Yes      | Absolute path to the Obsidian vault directory      |
+| `enableWrite`     | boolean  | No       | Override server-level `enableWrite` for this vault |
+| `includePatterns` | string[] | No       | Override server-level include patterns             |
+| `excludePatterns` | string[] | No       | Override server-level exclude patterns             |
+| `vectorSearch`    | object   | No       | Override server-level vector search config         |
+
+Per-vault settings inherit from server-level defaults when not specified.
+
+**Example with per-vault overrides:**
+
+```json
+{
+  "vaults": [
+    {
+      "name": "engineering",
+      "path": "/Users/me/Vaults/Engineering",
+      "enableWrite": true,
+      "vectorSearch": {
+        "enabled": true,
+        "model": "Xenova/bge-base-en-v1.5"
+      }
+    },
+    {
+      "name": "knowledge-base",
+      "path": "/Users/me/Vaults/KB",
+      "enableWrite": false,
+      "excludePatterns": [".obsidian/**", "_drafts/**"]
+    }
+  ],
+  "enableWrite": false,
+  "vectorSearch": {
+    "enabled": true,
+    "provider": "transformers",
+    "model": "Xenova/bge-small-en-v1.5"
+  }
+}
+```
 
 ### File Patterns
 
@@ -280,6 +332,12 @@ Whether to include YAML frontmatter fields in search results.
 
 ```json
 {
+  "vaults": [
+    {
+      "name": "my-vault",
+      "path": "/path/to/vault"
+    }
+  ],
   "enableWrite": false,
   "vectorSearch": {
     "enabled": false
@@ -293,7 +351,13 @@ Whether to include YAML frontmatter fields in search results.
 
 ```json
 {
-  "enableWrite": true,
+  "vaults": [
+    {
+      "name": "my-vault",
+      "path": "/path/to/vault",
+      "enableWrite": true
+    }
+  ],
   "vectorSearch": {
     "enabled": true,
     "provider": "transformers",
@@ -304,7 +368,46 @@ Whether to include YAML frontmatter fields in search results.
 
 **Use when**: Production setup with all features (recommended).
 
-### Scenario 3: Force Re-Indexing
+### Scenario 3: Multi-Vault with Mixed Permissions
+
+```json
+{
+  "vaults": [
+    {
+      "name": "work",
+      "path": "/path/to/work-vault",
+      "enableWrite": true,
+      "vectorSearch": {
+        "enabled": true,
+        "model": "Xenova/bge-base-en-v1.5"
+      }
+    },
+    {
+      "name": "reference",
+      "path": "/path/to/reference-vault",
+      "enableWrite": false
+    }
+  ],
+  "vectorSearch": {
+    "enabled": true,
+    "provider": "transformers",
+    "model": "Xenova/bge-small-en-v1.5",
+    "indexOnStartup": "auto"
+  }
+}
+```
+
+**Use when**: Multiple vaults with different access levels. The `work` vault uses a higher-quality model, while `reference` inherits the server default.
+
+### Scenario 4: Force Re-Indexing
+
+}
+}
+
+````markdown
+**Use when**: Production setup with all features (recommended).
+
+### Scenario 5: Force Re-Indexing
 
 ```json
 {
@@ -314,10 +417,11 @@ Whether to include YAML frontmatter fields in search results.
   }
 }
 ```
+````
 
 **Use when**: Debugging, testing, or forcing a fresh index build.
 
-### Scenario 4: Testing/Development
+### Scenario 6: Testing/Development
 
 ```json
 {
@@ -422,15 +526,17 @@ ls -la ~/Documents/ObsidianVault
 ## Best Practices
 
 1. **Separate Config from Code**: Never commit `config.json` with personal paths (use `config.example.json`)
-2. **Use Environment Variables**: Always use `OBSIDIAN_VAULT_PATH` env var for vault location
+2. **Use Descriptive Vault Names**: Choose short, meaningful names (e.g., `work`, `personal`, `reference`) — they appear in tool parameters and results
 3. **Start Simple**: Begin with read-only, enable features as needed
-4. **Startup Indexing**: Use `indexOnStartup: true` for initial setup, then `false` for faster restarts (file watcher maintains index)
-5. **Backup First**: Backup vault before enabling write operations
-6. **Monitor Logs**: Check `logs/mcp-server.log` for issues
-7. **Version Control**: Keep `config.example.json` in git, exclude `config.json`
-8. **Platform Paths**:
-   - Windows: Use double backslashes `\\` in JSON config files
-   - macOS/Linux: Use forward slashes `/` (no escaping needed)
+4. **Per-Vault Write Control**: Keep most vaults read-only, enable writes only where needed
+5. **Startup Indexing**: Use `indexOnStartup: "auto"` for best experience (default)
+6. **Memory Planning**: Each vault loads its own vector index (~150-300MB RAM per vault depending on model and vault size)
+7. **Backup First**: Backup vault before enabling write operations
+8. **Monitor Logs**: Check `logs/mcp-server.log` for vault initialization and indexing status
+9. **Version Control**: Keep `config.example.json` in git, exclude `config.json`
+10. **Platform Paths**:
+    - Windows: Use double backslashes `\\` in JSON config files
+    - macOS/Linux: Use forward slashes `/` (no escaping needed)
 
 ## Example Configurations
 
